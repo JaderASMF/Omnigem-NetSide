@@ -4,6 +4,8 @@ import { RecurringPatternsService } from './recurring-patterns.service';
 class CreateRecurringPatternDto {
   workerId: number;
   weekdays: number[];
+  weekInterval?: number;
+  weekOffset?: number;
   startDate?: string;
   endDate?: string;
   note?: string;
@@ -12,6 +14,8 @@ class CreateRecurringPatternDto {
 class UpdateRecurringPatternDto {
   workerId?: number;
   weekdays?: number[];
+  weekInterval?: number | null;
+  weekOffset?: number | null;
   startDate?: string | null;
   endDate?: string | null;
   note?: string | null;

@@ -10,6 +10,7 @@ export default function RecurringPatternsList({ items, onEdit, onDelete, workers
             <th style={{ textAlign: 'left' }}>ID</th>
             <th style={{ textAlign: 'left' }}>Worker</th>
             <th style={{ textAlign: 'left' }}>Weekdays</th>
+            <th style={{ textAlign: 'left' }}>Interval</th>
             <th style={{ textAlign: 'left' }}>Range</th>
             <th></th>
           </tr>
@@ -20,6 +21,7 @@ export default function RecurringPatternsList({ items, onEdit, onDelete, workers
               <td>{p.id}</td>
               <td>{(workers || []).find(w => w.id === p.workerId)?.name ?? p.workerId}</td>
               <td>{(p.weekdays || []).join(',')}</td>
+              <td>{p.weekInterval && p.weekInterval>1 ? `Every ${p.weekInterval} wk` : 'Every wk'}</td>
               <td>{(!p.startDate && !p.endDate) ? 'Always' : `${p.startDate ? new Date(p.startDate).toLocaleDateString() : '-'} — ${p.endDate ? new Date(p.endDate).toLocaleDateString() : '-'}`}</td>
               <td>
                 <button onClick={() => onEdit(p)} style={{ marginRight: 8 }}>Edit</button>

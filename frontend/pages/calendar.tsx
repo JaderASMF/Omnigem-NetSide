@@ -20,6 +20,9 @@ export default function CalendarPage(){
   const [selectedWorker, setSelectedWorker] = useState<number | ''>('');
   const [applyFuture, setApplyFuture] = useState(false);
   const [horizonWeeks, setHorizonWeeks] = useState(12);
+  const [scheduleChange, setScheduleChange] = useState(false);
+  const [rotationGroup, setRotationGroup] = useState<any[] | null>(null);
+  const [rotationOrder, setRotationOrder] = useState<Array<{id?:number; workerId:number}>>([]);
 
   useEffect(()=>{ loadDataForMonth(viewDate); loadWorkers(); loadPatterns(); loadHolidays(); }, [viewDate]);
 
@@ -64,6 +67,14 @@ export default function CalendarPage(){
       for (let d = new Date(genStart); d <= genEnd; d.setUTCDate(d.getUTCDate()+1)){
         const weekday = d.getUTCDay();
         if (!(p.weekdays || []).includes(weekday)) continue;
+        const interval = p.weekInterval || 1;
+        if(interval > 1){
+          const startAnchor = p.startDate ? new Date(p.startDate) : genStart;
+          const daysDiff = Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - Date.UTC(startAnchor.getUTCFullYear(), startAnchor.getUTCMonth(), startAnchor.getUTCDate())) / (24*60*60*1000));
+          const weeksSince = Math.floor(daysDiff / 7);
+          const offset = (p.weekOffset || 0);
+          if(weeksSince % interval !== offset) continue;
+        }
         if (isHolidayDate(new Date(d))) continue;
         const key = toISODate(new Date(d));
         if (map[key]) continue;
@@ -102,6 +113,19 @@ export default function CalendarPage(){
     setEditingDate(toISODate(d));
     setSelectedWorker(a?.workerId ?? '');
     setApplyFuture(false);
+    // detect rotation group for this date and weekday
+    const weekday = d.getUTCDay();
+    try{
+      const group = (patterns || []).filter((p:any) => (p.weekdays||[]).includes(weekday) && (!p.startDate || new Date(p.startDate) <= d) && (!p.endDate || new Date(p.endDate) >= d) && (p.weekInterval && p.weekInterval > 1));
+      if(group.length >= 2){
+        const sorted = [...group].sort((x:any,y:any)=> (x.weekOffset||0) - (y.weekOffset||0));
+        setRotationGroup(sorted);
+        setRotationOrder(sorted.map(s => ({ id: s.id, workerId: s.workerId })));
+      } else {
+        setRotationGroup(null);
+        setRotationOrder([]);
+      }
+    }catch(e){ setRotationGroup(null); setRotationOrder([]); }
   }
 
   async function saveEdit(){
@@ -139,33 +163,77 @@ export default function CalendarPage(){
       try{
         const res = await fetch(`${API_BASE}/recurring-patterns`);
         const pats = await res.json();
-        // remove weekday from patterns of oldWorker
-        for(const p of pats){
-          const pStart = p.startDate ? new Date(p.startDate) : null;
-          const pEnd = p.endDate ? new Date(p.endDate) : null;
-          const applies = (!pStart || pStart <= start) && (!pEnd || pEnd >= start);
-          if(p.workerId === oldWorker && applies && (p.weekdays || []).includes(weekday)){
-            const newWeek = (p.weekdays||[]).filter((x:number)=>x!==weekday);
-            if(newWeek.length) await fetch(`${API_BASE}/recurring-patterns/${p.id}`, { method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ weekdays: newWeek }) });
-            else await fetch(`${API_BASE}/recurring-patterns/${p.id}`, { method: 'DELETE' });
-          }
-        }
+        if(scheduleChange){
+            const sched = dateStr; // schedule from the selected date
+            const dayBefore = (dstr:string)=>{ const d=new Date(dstr+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()-1); return d.toISOString().slice(0,10); };
+            const schedDate = new Date(sched+'T00:00:00Z');
 
-        // add weekday to a pattern for newWorker or create one
-        if(newWorker !== null){
-          let target = pats.find((p:any)=>p.workerId===newWorker && ((!p.startDate)|| new Date(p.startDate) <= start) && ((!p.endDate)|| new Date(p.endDate) >= start));
-          if(target){
-            if(!(target.weekdays||[]).includes(weekday)){
-              const merged = Array.from(new Set([...(target.weekdays||[]), weekday])).sort();
-              await fetch(`${API_BASE}/recurring-patterns/${target.id}`, { method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ weekdays: merged }) });
+            // if there is a rotation group detected and user changed its order, apply scheduled rotation change
+            if(rotationOrder && rotationOrder.length >= 2){
+              const originalIds = rotationGroup ? rotationGroup.map(r=>r.id) : [];
+              // set endDate on originals to day before
+              for(const id of originalIds){ try{ await fetch(`${API_BASE}/recurring-patterns/${id}`, { method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ endDate: dayBefore(sched) }) }); }catch(e){} }
+              // create new patterns with new order
+              const n = rotationOrder.length;
+              for(let i=0;i<n;i++){
+                const r = rotationOrder[i];
+                const body = { workerId: r.workerId, weekdays: [weekday], weekInterval: n, weekOffset: i, startDate: sched };
+                try{ await fetch(`${API_BASE}/recurring-patterns`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); }catch(e){}
+              }
+              // delete existing RECURRENT assignments in the range for that weekday, then regenerate assignments from sched
+              const regenEnd = addWeeks(schedDate, horizonWeeks);
+              try{
+                const resA = await fetch(`${API_BASE}/assignments?startDate=${toISODate(schedDate)}&endDate=${toISODate(regenEnd)}`);
+                if(resA.ok){
+                  const futureAssigns = await resA.json();
+                  for(const f of futureAssigns){
+                    const fd = new Date(f.date);
+                    if(fd.getUTCDay() === weekday && f.source === 'RECURRENT'){
+                      try{ await fetch(`${API_BASE}/assignments/${f.id}`, { method: 'DELETE' }); }catch(e){}
+                    }
+                  }
+                }
+              }catch(e){}
+              await fetch(`${API_BASE}/assignments/generate`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ startDate: toISODate(schedDate), endDate: toISODate(regenEnd) }) });
+              // refresh and close
+              await loadDataForMonth(new Date(dateStr+'T00:00:00Z'));
+              await loadPatterns();
+              await loadHolidays();
+              setEditingDate(null);
+              return;
             }
-          } else {
-            await fetch(`${API_BASE}/recurring-patterns`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ workerId: newWorker, weekdays: [weekday] }) });
-          }
-        }
 
-        // c) regenerate assignments for the range
-        await fetch(`${API_BASE}/assignments/generate`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ startDate: toISODate(start), endDate: toISODate(end) }) });
+            // fallback to single-weekday scheduled swap (existing behavior)
+            const pats = await (await fetch(`${API_BASE}/recurring-patterns`)).json();
+          // immediate change (existing behavior)
+          // remove weekday from patterns of oldWorker
+          for(const p of pats){
+            const pStart = p.startDate ? new Date(p.startDate) : null;
+            const pEnd = p.endDate ? new Date(p.endDate) : null;
+            const applies = (!pStart || pStart <= start) && (!pEnd || pEnd >= start);
+            if(p.workerId === oldWorker && applies && (p.weekdays || []).includes(weekday)){
+              const newWeek = (p.weekdays||[]).filter((x:number)=>x!==weekday);
+              if(newWeek.length) await fetch(`${API_BASE}/recurring-patterns/${p.id}`, { method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ weekdays: newWeek }) });
+              else await fetch(`${API_BASE}/recurring-patterns/${p.id}`, { method: 'DELETE' });
+            }
+          }
+
+          // add weekday to a pattern for newWorker or create one
+          if(newWorker !== null){
+            let target = pats.find((p:any)=>p.workerId===newWorker && ((!p.startDate)|| new Date(p.startDate) <= start) && ((!p.endDate)|| new Date(p.endDate) >= start));
+            if(target){
+              if(!(target.weekdays||[]).includes(weekday)){
+                const merged = Array.from(new Set([...(target.weekdays||[]), weekday])).sort();
+                await fetch(`${API_BASE}/recurring-patterns/${target.id}`, { method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ weekdays: merged }) });
+              }
+            } else {
+              await fetch(`${API_BASE}/recurring-patterns`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ workerId: newWorker, weekdays: [weekday] }) });
+            }
+          }
+
+          // c) regenerate assignments for the range
+          await fetch(`${API_BASE}/assignments/generate`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ startDate: toISODate(start), endDate: toISODate(end) }) });
+        }
       }catch(e){ console.error('propagate failed', e); }
     }
 
@@ -232,6 +300,35 @@ export default function CalendarPage(){
                   <label>Weeks horizon <input type="number" value={horizonWeeks} onChange={e=>setHorizonWeeks(Number(e.target.value)||0)} style={{ width:80, marginLeft:8 }} /></label>
                 </div>
               )}
+
+              <div style={{ marginTop:8 }}>
+                <label style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <input type="checkbox" checked={scheduleChange} onChange={e=>setScheduleChange(e.target.checked)} />
+                  <span>Schedule change from selected date</span>
+                </label>
+                {scheduleChange && rotationOrder && rotationOrder.length>0 && (
+                  <div style={{ marginTop:8, border:'1px solid #eee', padding:8 }}>
+                    <div style={{ fontSize:12, marginBottom:6 }}>Rotation order (top = will apply on selected date)</div>
+                    {rotationOrder.map((r, idx)=> (
+                      <div key={r.workerId} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                        <div>{idx+1}. {workers.find(w=>w.id===r.workerId)?.name ?? r.workerId} ({r.workerId})</div>
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button disabled={idx===0} onClick={()=>{ setRotationOrder(o=>{ const c=[...o]; const t=c[idx-1]; c[idx-1]=c[idx]; c[idx]=t; return c; }); }}>↑</button>
+                          <button disabled={idx===rotationOrder.length-1} onClick={()=>{ setRotationOrder(o=>{ const c=[...o]; const t=c[idx+1]; c[idx+1]=c[idx]; c[idx]=t; return c; }); }}>↓</button>
+                          <button onClick={()=>{ setRotationOrder(o=>o.filter((_,i)=>i!==idx)); }}>Remove</button>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                      <select onChange={e=>{ if(e.target.value){ setRotationOrder(o=>[...o, { workerId: Number(e.target.value) }]); e.target.value=''; } }}>
+                        <option value="">-- add worker --</option>
+                        {workers.filter(w=>!rotationOrder.some(r=>r.workerId===w.id)).map(w=> <option key={w.id} value={w.id}>{w.name} ({w.id})</option>)}
+                      </select>
+                      <div style={{ fontSize:12, color:'#666' }}>Add to end of rotation</div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             <div style={{ marginTop:12, display:'flex', gap:8 }}>
               <button onClick={saveEdit}>Save</button>

@@ -16,6 +16,8 @@ export class RecurringPatternsService {
   create(data: {
     workerId: number;
     weekdays: number[];
+    weekInterval?: number;
+    weekOffset?: number;
     startDate?: Date | string | null;
     endDate?: Date | string | null;
     note?: string | null;
@@ -23,7 +25,7 @@ export class RecurringPatternsService {
     return this.prisma.recurringPattern.create({ data });
   }
 
-  update(id: number, data: Partial<{ workerId: number; weekdays: number[]; startDate?: Date | string | null; endDate?: Date | string | null; note?: string | null }>) {
+  update(id: number, data: Partial<{ workerId: number; weekdays: number[]; weekInterval?: number; weekOffset?: number; startDate?: Date | string | null; endDate?: Date | string | null; note?: string | null }>) {
     return this.prisma.recurringPattern.update({ where: { id }, data });
   }
 

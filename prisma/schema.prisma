@@ -49,6 +49,8 @@ model RecurringPattern {
   workerId   Int
   worker     Worker   @relation(fields: [workerId], references: [id])
   weekdays   Int[]    // 0=domingo .. 6=sábado
+  weekInterval Int    @default(1)
+  weekOffset   Int    @default(0)
   startDate  DateTime?
   endDate    DateTime?
   note       String?

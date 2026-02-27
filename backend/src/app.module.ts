@@ -1,0 +1,17 @@
+import { Module } from '@nestjs/common';
+import { PrismaService } from './prisma/prisma.service';
+import { PrismaModule } from './prisma/prisma.module';
+import { UsersModule } from './users/users.module';
+import { AuthModule } from './auth/auth.module';
+import { WorkersModule } from './workers/workers.module';
+import { HolidaysModule } from './holidays/holidays.module';
+import { RecurringPatternsModule } from './recurring-patterns/recurring-patterns.module';
+import { AssignmentsModule } from './assignments/assignments.module';
+import { AppController } from './app.controller';
+
+@Module({
+  imports: [PrismaModule, UsersModule, AuthModule, WorkersModule, HolidaysModule, RecurringPatternsModule, AssignmentsModule],
+  controllers: [AppController],
+  providers: [PrismaService],
+})
+export class AppModule {}

@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../backend/node_modules/@prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+  
+enum Role {
+  ADMIN
+  GUEST
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String?
+  role      Role     @default(GUEST)
+  name      String?
+  createdAt DateTime @default(now())
+}
+
+// Trabalhadores que podem ser escalados
+model Worker {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String?  @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  // relations
+  recurringPatterns RecurringPattern[]
+  assignments       Assignment[]
+}
+
+// Feriados (datas em que geralmente não se escala)
+model Holiday {
+  id        Int      @id @default(autoincrement())
+  date      DateTime
+  name      String?
+  recurring Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// Padrões de recorrência para atribuir um trabalhador em determinados dias da semana
+model RecurringPattern {
+  id         Int      @id @default(autoincrement())
+  workerId   Int
+  worker     Worker   @relation(fields: [workerId], references: [id])
+  weekdays   Int[]    // 0=domingo .. 6=sábado
+  startDate  DateTime?
+  endDate    DateTime?
+  note       String?
+  createdAt  DateTime @default(now())
+}
+
+// Atribuição explícita por dia. Pode ser gerada a partir de padrões recorrentes.
+model Assignment {
+  id         Int      @id @default(autoincrement())
+  date       DateTime @unique
+  workerId   Int?
+  worker     Worker?  @relation(fields: [workerId], references: [id])
+  source     AssignmentSource @default(MANUAL)
+  note       String?
+  createdAt  DateTime @default(now())
+}
+
+enum AssignmentSource {
+  MANUAL
+  RECURRENT
+}

@@ -1,2 +1,38 @@
 html,body,#__next{height:100%}
 body{margin:0}
+
+/* ── Global button hover effects ── */
+button {
+  transition: all 0.2s ease;
+}
+button:hover:not(:disabled) {
+  filter: brightness(1.2);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+button:active:not(:disabled) {
+  filter: brightness(0.95);
+  transform: translateY(0px);
+  box-shadow: none;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Links e nav hover ── */
+a {
+  transition: color 0.2s ease, opacity 0.2s ease;
+}
+a:hover {
+  opacity: 0.85;
+}
+
+/* ── Select / input focus ── */
+select, input[type="date"], input[type="text"], input[type="password"], input[type="email"] {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+select:focus, input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(92, 124, 250, 0.4);
+}

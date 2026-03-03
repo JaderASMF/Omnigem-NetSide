@@ -1,379 +1,970 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE as string) || 'http://localhost:3001';
+const API = (process.env.NEXT_PUBLIC_API_BASE as string) || 'http://localhost:3001';
 
+// Paleta de cores em modo escuro (tons mais claros/suaves)
+const PALETTE = {
+  // fundos
+  background: '#1A1D21', // background principal (um pouco mais claro)
+  backgroundSecondary: '#20242A', // background secundário
+  cardBg: '#2A2F36', // cards / containers
+  hoverBg: '#323844', // hover / surfaces
+  border: '#3A4250',
+
+  // texto
+  textPrimary: '#E6EAF0',
+  textSecondary: '#A8B0BA',
+  textDisabled: '#6B7280',
+
+  // destaques
+  primary: '#5C7CFA', // azul acinzentado
+  success: '#4CAF8D',
+  warning: '#E6A23C',
+  error: '#E57373',
+  info: '#4DA3FF',
+
+  plusBtnBorder: '#5C7CFA',
+  todayBg: '#20242A',
+  notCurrentBg: '#181B20',
+  manualBg: '#14352C',
+  rotationBg: '#1B2536',
+};
+
+/* ── helpers de data ── */
 function startOfMonth(d: Date) { return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)); }
-function endOfMonth(d: Date) { return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()+1, 0)); }
-function addDays(d: Date, n: number){ const c = new Date(d); c.setUTCDate(c.getUTCDate()+n); return c; }
-function addWeeks(d: Date, w: number){ return addDays(d, w*7); }
-function toISODate(d: Date){ return d.toISOString().slice(0,10); }
+function endOfMonth(d: Date) { return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)); }
+function addDays(d: Date, n: number) { const c = new Date(d); c.setUTCDate(c.getUTCDate() + n); return c; }
+function toISO(d: Date) { return d.toISOString().slice(0, 10); }
 
-export default function CalendarPage(){
-  const [viewDate, setViewDate] = useState(new Date());
-  const [assignments, setAssignments] = useState<any[]>([]);
-  const [workers, setWorkers] = useState<any[]>([]);
-  const [patterns, setPatterns] = useState<any[]>([]);
-  const [holidays, setHolidays] = useState<any[]>([]);
-  const [displayed, setDisplayed] = useState<Record<string, any>>({});
+const WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-  const [editingDate, setEditingDate] = useState<string | null>(null);
-  const [selectedWorker, setSelectedWorker] = useState<number | ''>('');
-  const [applyFuture, setApplyFuture] = useState(false);
-  const [horizonWeeks, setHorizonWeeks] = useState(12);
-  const [scheduleChange, setScheduleChange] = useState(false);
-  const [rotationGroup, setRotationGroup] = useState<any[] | null>(null);
-  const [rotationOrder, setRotationOrder] = useState<Array<{id?:number; workerId:number}>>([]);
+/* ── tipos ── */
+type Worker = { id: number; name: string };
+type Rotation = { id: number; name: string | null; weekdays: number[]; workerIds: number[]; startDate: string };
+type Holiday = { id: number; name: string | null; recurring: boolean };
+type CalendarEntryItem = { workerId: number | null; workerName: string | null; workerColor?: string | null; source: string; rotationId?: number; rotationName?: string; note?: string };
+type DayData = { entries: CalendarEntryItem[]; holiday?: Holiday };
 
-  useEffect(()=>{}, []);
+export default function CalendarPage() {
+  const [viewDate, setViewDate] = useState(() => {
+    const now = new Date();
+    return new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+  });
+  // selectors for month/year (kept in sync with viewDate)
+  const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const [selMonth, setSelMonth] = useState<number>(viewDate.getUTCMonth());
+  const [selYear, setSelYear] = useState<number>(viewDate.getUTCFullYear());
 
-  useEffect(()=>{}, [patterns]);
+  useEffect(() => {
+    setSelMonth(viewDate.getUTCMonth());
+    setSelYear(viewDate.getUTCFullYear());
+  }, [viewDate]);
+  const [calendar, setCalendar] = useState<Record<string, DayData>>({});
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [rotations, setRotations] = useState<Rotation[]>([]);
 
-  useEffect(()=>{ loadDataForMonth(viewDate); loadWorkers(); loadPatterns(); loadHolidays(); }, [viewDate]);
+  /* painel de informações do dia */
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
-  async function loadWorkers(){
-    try{ const res = await fetch(`${API_BASE}/workers`, { cache: 'no-store' }); const data = await res.json(); setWorkers(data||[]); }catch(e){ setWorkers([]); }
-  }
-  async function loadPatterns(){ try{ const res = await fetch(`${API_BASE}/recurring-patterns`, { cache: 'no-store' }); const data = await res.json(); setPatterns(data||[]); }catch(e){ setPatterns([]); } }
+  /* modal de edição de dia (override manual) */
+  const [editDate, setEditDate] = useState<string | null>(null);
+  const [editWorkerIds, setEditWorkerIds] = useState<number[]>([]);
+  const [editNote, setEditNote] = useState<string>('');
 
-  async function loadHolidays(){ try{ const res = await fetch(`${API_BASE}/holidays`, { cache: 'no-store' }); const data = await res.json(); setHolidays(data||[]); }catch(e){ setHolidays([]); } }
+  /* modal de edição/criação de rodízio */
+  const [rotModal, setRotModal] = useState<Rotation | 'new' | null>(null);
+  const [rotScheduleFrom, setRotScheduleFrom] = useState<string | null>(null);
 
-  async function loadDataForMonth(d: Date){
-    const start = startOfMonth(d);
-    const end = endOfMonth(d);
-    try{
-      const res = await fetch(`${API_BASE}/assignments?startDate=${toISODate(start)}&endDate=${toISODate(end)}`, { cache: 'no-store' });
-      const data = await res.json(); setAssignments(data||[]);
-    }catch(e){ setAssignments([]); }
-  }
+  /* ── carregamento ── */
+  const loadWorkers = useCallback(async () => {
+    try { const r = await fetch(`${API}/workers`); setWorkers(await r.json()); } catch { setWorkers([]); }
+  }, []);
 
-  // compute displayed map merging real assignments and generated occurrences from patterns
-  useEffect(()=>{
-    const start = startOfMonth(viewDate);
-    const end = endOfMonth(viewDate);
-    const map: Record<string, any> = {};
+  const loadRotations = useCallback(async () => {
+    try { const r = await fetch(`${API}/rotations`); setRotations(await r.json()); } catch { setRotations([]); }
+  }, []);
 
-    (assignments || []).forEach((a:any) => { if(a && a.date) map[a.date.slice(0,10)] = a; });
+  const loadCalendar = useCallback(async (d: Date) => {
+    const s = toISO(startOfMonth(d));
+    const e = toISO(endOfMonth(d));
+    try {
+      const r = await fetch(`${API}/rotations/calendar?startDate=${s}&endDate=${e}`);
+      setCalendar(await r.json());
+    } catch { setCalendar({}); }
+  }, []);
 
-    const isHolidayDate = (d: Date) => {
-      return (holidays || []).some((h:any) => {
-        const hd = new Date(h.date);
-        if (h.recurring) return hd.getUTCDate() === d.getUTCDate() && hd.getUTCMonth() === d.getUTCMonth();
-        return hd.toISOString().slice(0,10) === d.toISOString().slice(0,10);
-      });
-    };
+  useEffect(() => { loadWorkers(); loadRotations(); }, []);
+  useEffect(() => { loadCalendar(viewDate); }, [viewDate, loadCalendar]);
 
-    (patterns || []).forEach((p:any) => {
-      const pStart = p.startDate ? new Date(p.startDate) : start;
-      const pEnd = p.endDate ? new Date(p.endDate) : end;
-      const genStart = pStart > start ? pStart : start;
-      const genEnd = pEnd < end ? pEnd : end;
-      if (genStart > genEnd) return;
-      for (let d = new Date(genStart); d <= genEnd; d.setUTCDate(d.getUTCDate()+1)){
-        const weekday = d.getUTCDay();
-        if (!(p.weekdays || []).includes(weekday)) continue;
-        const interval = p.weekInterval || 1;
-        if (interval > 1) {
-          const startAnchor = p.startDate ? new Date(p.startDate) : genStart;
-          const toUTCDate = (dt: Date) => Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
-          const startWeekStart = new Date(startAnchor);
-          startWeekStart.setUTCDate(startWeekStart.getUTCDate() - startWeekStart.getUTCDay());
-          startWeekStart.setUTCHours(0,0,0,0);
-          const currentWeekStart = new Date(d);
-          currentWeekStart.setUTCDate(currentWeekStart.getUTCDate() - currentWeekStart.getUTCDay());
-          currentWeekStart.setUTCHours(0,0,0,0);
-          const weeksSince = Math.floor((toUTCDate(currentWeekStart) - toUTCDate(startWeekStart)) / (7*24*60*60*1000));
-          const offset = (p.weekOffset || 0);
-          if (((weeksSince % interval) + interval) % interval !== (offset % interval)) continue;
-        }
-        if (isHolidayDate(new Date(d))) continue;
-        const key = toISODate(new Date(d));
-        if (map[key]) continue;
-        map[key] = { id: null, date: key, workerId: p.workerId, source: 'RECURRENT', note: p.note };
-      }
-    });
+  /* ── navegação ── */
+  const prevMonth = () => { const c = new Date(viewDate); c.setUTCMonth(c.getUTCMonth() - 1); setViewDate(c); };
+  const nextMonth = () => { const c = new Date(viewDate); c.setUTCMonth(c.getUTCMonth() + 1); setViewDate(c); };
 
-    setDisplayed(map);
-  }, [assignments, patterns, holidays, viewDate]);
-
-  function prevMonth(){ const c = new Date(viewDate); c.setUTCMonth(c.getUTCMonth()-1); setViewDate(c); }
-  function nextMonth(){ const c = new Date(viewDate); c.setUTCMonth(c.getUTCMonth()+1); setViewDate(c); }
-
-  function matrixForMonth(d: Date){
+  /* ── grade mensal ── */
+  function matrixForMonth(d: Date) {
     const start = startOfMonth(d);
     const firstWeekday = start.getUTCDay();
-    const daysInMonth = endOfMonth(d).getUTCDate();
-    const rows: (Date|null)[][] = [];
+    const rows: (Date | null)[][] = [];
     let cur = addDays(start, -firstWeekday);
-    for(let r=0;r<6;r++){
-      const row: (Date|null)[] = [];
-      for(let c=0;c<7;c++){ row.push(new Date(cur)); cur = addDays(cur,1); }
+    for (let r = 0; r < 6; r++) {
+      const row: (Date | null)[] = [];
+      for (let c = 0; c < 7; c++) { row.push(new Date(cur)); cur = addDays(cur, 1); }
       rows.push(row);
     }
     return rows;
   }
-
-  function assignmentForDate(d: Date){
-    const iso = toISODate(d);
-    if(displayed[iso]) return displayed[iso];
-    return assignments.find(a => a.date && a.date.slice(0,10) === iso);
-  }
-
-  function openEdit(d: Date){
-    
-    const a = assignmentForDate(d);
-    setEditingDate(toISODate(d));
-    setSelectedWorker(a?.workerId ?? '');
-    setApplyFuture(false);
-    // detect rotation group for this date and weekday
-    const weekday = d.getUTCDay();
-    try{
-      const group = (patterns || []).filter((p:any) => (p.weekdays||[]).includes(weekday) && (!p.startDate || new Date(p.startDate) <= d) && (!p.endDate || new Date(p.endDate) >= d) && (p.weekInterval && p.weekInterval > 1));
-      
-      if(group.length >= 2){
-        const sorted = [...group].sort((x:any,y:any)=> (x.weekOffset||0) - (y.weekOffset||0));
-        setRotationGroup(sorted);
-          setRotationOrder(sorted.map(s => ({ id: s.id, workerId: s.workerId })));
-          // diagnostic log: show rotation members in sorted order for debugging
-          try{
-          }catch(e){}
-      } else {
-        setRotationGroup(null);
-        setRotationOrder([]);
-      }
-    }catch(e){ setRotationGroup(null); setRotationOrder([]); }
-  }
-
-  async function saveEdit(){
-    if(!editingDate) return;
-    // validation: prevent scheduling a rotation change without defining rotation order
-    if(scheduleChange && (!rotationOrder || rotationOrder.length === 0)){
-      alert('Defina a ordem de rotação antes de marcar "Schedule change".');
-      return;
-    }
-    const dateStr = editingDate;
-    const old = assignments.find(a => a.date && a.date.slice(0,10) === dateStr);
-    const oldWorker = old?.workerId ?? null;
-    const newWorker = selectedWorker === '' ? null : Number(selectedWorker);
-
-    // 1) delete existing assignment for that date if present
-    if(old){ try{ await fetch(`${API_BASE}/assignments/${old.id}`, { method: 'DELETE' }); }catch(e){} }
-
-    // 2) create manual assignment if newWorker not null
-    if(newWorker !== null){ await fetch(`${API_BASE}/assignments`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ date: dateStr, workerId: newWorker }) }); }
-
-    // 3) if applyFuture, propagate change across future weeks
-    if(applyFuture){
-      const start = new Date(dateStr + 'T00:00:00Z');
-      const end = addWeeks(start, horizonWeeks);
-      const weekday = start.getUTCDay();
-
-      // a) remove recurring assignments in future for that weekday
-      try{
-        const res = await fetch(`${API_BASE}/assignments?startDate=${toISODate(start)}&endDate=${toISODate(end)}`);
-        const future = await res.json();
-        for(const f of future){
-          const fd = new Date(f.date);
-          if(fd.getUTCDay() === weekday && f.source === 'RECURRENT'){
-            try{ await fetch(`${API_BASE}/assignments/${f.id}`, { method: 'DELETE' }); }catch(e){}
-          }
-        }
-      }catch(e){}
-
-      // b) adjust recurring patterns: remove weekday from old worker patterns, add to new worker pattern
-      try{
-        const res = await fetch(`${API_BASE}/recurring-patterns`);
-        const pats = await res.json();
-        if(scheduleChange){
-            const sched = dateStr; // schedule from the selected date
-            const dayBefore = (dstr:string)=>{ const d=new Date(dstr+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()-1); return d.toISOString().slice(0,10); };
-            const schedDate = new Date(sched+'T00:00:00Z');
-
-            
-
-            // fallback to single-weekday scheduled swap (existing behavior)
-            const pats = await (await fetch(`${API_BASE}/recurring-patterns`)).json();
-          // immediate change (existing behavior)
-          // remove weekday from patterns of oldWorker
-          for(const p of pats){
-            const pStart = p.startDate ? new Date(p.startDate) : null;
-            const pEnd = p.endDate ? new Date(p.endDate) : null;
-            const applies = (!pStart || pStart <= start) && (!pEnd || pEnd >= start);
-            if(p.workerId === oldWorker && applies && (p.weekdays || []).includes(weekday)){
-              const newWeek = (p.weekdays||[]).filter((x:number)=>x!==weekday);
-              if(newWeek.length) await fetch(`${API_BASE}/recurring-patterns/${p.id}`, { method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ weekdays: newWeek }) });
-              else await fetch(`${API_BASE}/recurring-patterns/${p.id}`, { method: 'DELETE' });
-            }
-          }
-
-          // add weekday to a pattern for newWorker or create one
-          if(newWorker !== null){
-            let target = pats.find((p:any)=>p.workerId===newWorker && ((!p.startDate)|| new Date(p.startDate) <= start) && ((!p.endDate)|| new Date(p.endDate) >= start));
-            if(target){
-              if(!(target.weekdays||[]).includes(weekday)){
-                const merged = Array.from(new Set([...(target.weekdays||[]), weekday])).sort();
-                await fetch(`${API_BASE}/recurring-patterns/${target.id}`, { method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ weekdays: merged }) });
-              }
-            } else {
-              await fetch(`${API_BASE}/recurring-patterns`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ workerId: newWorker, weekdays: [weekday] }) });
-            }
-          }
-
-          // c) regenerate assignments for the range
-          await fetch(`${API_BASE}/assignments/generate`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ startDate: toISODate(start), endDate: toISODate(end) }) });
-        }
-      }catch(e){ console.error('propagate failed', e); }
-    }
-
-    // refresh
-    // if user requested a scheduled rotation change (independent of applyFuture), apply it here
-    if(scheduleChange && rotationOrder && rotationOrder.length >= 2){
-      const sched = dateStr;
-      const dayBefore = (dstr:string)=>{ const d=new Date(dstr+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()-1); return d.toISOString().slice(0,10); };
-      const schedDate = new Date(sched+'T00:00:00Z');
-      const weekday = schedDate.getUTCDay();
-      const originalGroup = rotationGroup || [];
-      const weekdays = originalGroup.length ? (originalGroup[0].weekdays || [weekday]) : [weekday];
-      const interval = originalGroup.length ? (originalGroup[0].weekInterval || originalGroup.length) : rotationOrder.length;
-      const originalIds = originalGroup.map((r:any) => r.id).filter((id:any) => id != null);
-      
-
-      for(const id of originalIds){
-        try{ const resPut = await fetch(`${API_BASE}/recurring-patterns/${id}`, { method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ endDate: dayBefore(sched) }) }); if(!resPut.ok){ const txt = await resPut.text(); console.error('PUT recurring-patterns failed', id, resPut.status, txt); } }catch(e){ console.error('PUT recurring-patterns exception', id, e); }
-      }
-
-      const n = rotationOrder.length;
-      // create new patterns so rotationOrder[0] applies on the week containing schedDate
-      for(let i=0;i<n;i++){
-        const r = rotationOrder[i];
-        const body = { workerId: r.workerId, weekdays: weekdays, weekInterval: interval, weekOffset: i, startDate: sched };
-        try{
-          const resPost = await fetch(`${API_BASE}/recurring-patterns`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-          if(!resPost.ok){ const txt = await resPost.text(); console.error('POST recurring-patterns failed', body, resPost.status, txt); }
-        }catch(e){ console.error('POST recurring-patterns exception', body, e); }
-      }
-
-      const regenEnd = addWeeks(schedDate, horizonWeeks);
-      try{
-        const resA = await fetch(`${API_BASE}/assignments?startDate=${toISODate(schedDate)}&endDate=${toISODate(regenEnd)}`);
-        if(resA.ok){
-          const futureAssigns = await resA.json();
-          for(const f of futureAssigns){
-            const fd = new Date(f.date);
-            if((weekdays || []).includes(fd.getUTCDay()) && f.source === 'RECURRENT'){
-              try{ const resDel = await fetch(`${API_BASE}/assignments/${f.id}`, { method: 'DELETE' }); if(!resDel.ok){ const txt = await resDel.text(); console.error('DELETE assignment failed', f.id, resDel.status, txt); } }catch(e){ console.error('DELETE assignment exception', f.id, e); }
-            }
-          }
-        } else { const txt = await resA.text(); console.error('GET assignments for regen failed', resA.status, txt); }
-      }catch(e){ console.error('GET assignments for regen exception', e); }
-
-      try{ const resGen = await fetch(`${API_BASE}/assignments/generate`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ startDate: toISODate(schedDate), endDate: toISODate(regenEnd) }) }); if(!resGen.ok){ const txt = await resGen.text(); console.error('POST assignments/generate failed', resGen.status, txt); } }catch(e){ console.error('POST assignments/generate exception', e); }
-
-      await loadDataForMonth(new Date(dateStr+'T00:00:00Z'));
-      await loadPatterns();
-      await loadHolidays();
-      setEditingDate(null);
-      return;
-    }
-
-    await loadDataForMonth(new Date(dateStr+'T00:00:00Z'));
-    await loadPatterns();
-    await loadHolidays();
-    setEditingDate(null);
-  }
-
   const rows = matrixForMonth(viewDate);
 
+  /* ── salvar override manual ── */
+  async function saveManualOverride() {
+    if (!editDate) return;
+    // Deleta todos os overrides manuais existentes para esse dia
+    try {
+      const res = await fetch(`${API}/assignments?startDate=${editDate}&endDate=${editDate}`);
+      const existing = await res.json();
+      for (const a of existing) {
+        if (a.date?.slice(0, 10) === editDate && a.source === 'MANUAL') {
+          await fetch(`${API}/assignments/${a.id}`, { method: 'DELETE' });
+        }
+      }
+    } catch { }
+    // Se nenhum trabalhador foi selecionado, cria um marker explícito (workerId: null)
+    if (editWorkerIds.length === 0) {
+      await fetch(`${API}/assignments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: editDate, workerId: null, note: editNote || undefined }),
+      });
+    } else {
+      // Cria um assignment para cada trabalhador selecionado
+      for (const wId of editWorkerIds) {
+        await fetch(`${API}/assignments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: editDate, workerId: wId, note: editNote || undefined }),
+        });
+      }
+    }
+    await loadCalendar(viewDate);
+    setEditDate(null);
+    setEditNote('');
+    setEditWorkerIds([]);
+  }
+
+  /* ── remover override manual ── */
+  async function removeOverride(dateStr: string) {
+    try {
+      const res = await fetch(`${API}/assignments?startDate=${dateStr}&endDate=${dateStr}`);
+      const existing = await res.json();
+      for (const a of existing) {
+        if (a.date?.slice(0, 10) === dateStr && a.source === 'MANUAL') {
+          await fetch(`${API}/assignments/${a.id}`, { method: 'DELETE' });
+        }
+      }
+    } catch { }
+    await loadCalendar(viewDate);
+  }
+
   return (
-    <div style={{ padding:24 }}>
-      <h1>Calendar</h1>
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-        <button onClick={prevMonth}>Prev</button>
-        <strong>{viewDate.toLocaleString(undefined,{month:'long',year:'numeric'})}</strong>
-        <button onClick={nextMonth}>Next</button>
+    <div style={{ padding: 16, fontFamily: 'system-ui, sans-serif', backgroundColor: PALETTE.background, color: PALETTE.textPrimary, height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+      <div style={{ marginBottom: 8, flexShrink: 0 }}>
+        <h1 style={{ margin: 0, color: PALETTE.textPrimary, fontSize: 20 }}>Calendário</h1>
       </div>
 
-      <table style={{ width:'100%', borderCollapse:'collapse', marginTop:12 }}>
+      <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
+        <aside style={{ width: 280, backgroundColor: PALETTE.backgroundSecondary, borderRadius: 8, padding: 10, border: `1px solid ${PALETTE.border}`, overflow: 'auto', flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <strong style={{ fontSize: 16, color: PALETTE.textPrimary }}>Rodízios</strong>
+            <button onClick={() => setRotModal('new')} style={btnPrimary}>+ Novo</button>
+          </div>
+
+          {rotations.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {rotations.map(rot => (
+                <div key={rot.id} style={{ border: `1px solid ${PALETTE.border}`, borderRadius: 8, padding: 12, background: PALETTE.cardBg }}>
+                  <div style={{ fontWeight: 600, marginBottom: 4, color: PALETTE.textPrimary }}>{rot.name || `Rodízio #${rot.id}`}</div>
+                  <div style={{ fontSize: 12, color: PALETTE.textSecondary }}>
+                    Dias: {rot.weekdays.map(w => WEEKDAY_LABELS[w]).join(', ')}
+                  </div>
+                  <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>
+                    Ordem: {rot.workerIds.map(id => workers.find(w => w.id === id)?.name ?? `#${id}`).join(' → ')}
+                  </div>
+                  <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+                    <button onClick={() => setRotModal(rot)} style={btnSmallBlueSidebar}>Editar</button>
+                    <button onClick={async () => { if (confirm('Apagar este rodízio?')) { await fetch(`${API}/rotations/${rot.id}`, { method: 'DELETE' }); await loadRotations(); await loadCalendar(viewDate); } }} style={btnSmallRedSidebar}>Apagar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ color: PALETTE.textSecondary }}>Nenhum rodízio ativo</div>
+          )}
+
+        </aside>
+
+        <div style={{ flex: 1, backgroundColor: PALETTE.backgroundSecondary, borderRadius: 8, padding: 12, border: `1px solid ${PALETTE.border}`, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+
+      {/* Navegação de mês */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexShrink: 0 }}>
+        <button onClick={prevMonth} style={btnNav}>◀ Anterior</button>
+        <strong style={{ fontSize: 18, color: PALETTE.textPrimary }}>
+          {viewDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' })}
+        </strong>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <select
+            value={selMonth}
+            onChange={e => {
+              const m = Number(e.target.value);
+              setSelMonth(m);
+              setViewDate(new Date(Date.UTC(selYear, m, 1)));
+            }}
+            style={{ padding: 6, backgroundColor: PALETTE.backgroundSecondary, color: PALETTE.textPrimary, border: `1px solid ${PALETTE.border}`, borderRadius: 6 }}
+          >
+            {MONTH_NAMES.map((mn, i) => <option key={i} value={i}>{mn}</option>)}
+          </select>
+
+          <select
+            value={selYear}
+            onChange={e => {
+              const y = Number(e.target.value);
+              setSelYear(y);
+              setViewDate(new Date(Date.UTC(y, selMonth, 1)));
+            }}
+            style={{ padding: 6, backgroundColor: PALETTE.backgroundSecondary, color: PALETTE.textPrimary, border: `1px solid ${PALETTE.border}`, borderRadius: 6 }}
+          >
+            {(() => {
+              const cur = viewDate.getUTCFullYear();
+              const range = 5; // years before/after
+              const arr = [] as number[];
+              for (let y = cur - range; y <= cur + range; y++) arr.push(y);
+              return arr.map(y => <option key={y} value={y}>{y}</option>);
+            })()}
+          </select>
+        </div>
+
+        <button onClick={nextMonth} style={btnNav}>Próximo ▶</button>
+      </div>
+
+      {/* Grade do calendário */}
+      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <table style={{ width: '100%', height: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
         <thead>
-          <tr>{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=> <th key={d} style={{textAlign:'left'}}>{d}</th>)}</tr>
+          <tr>
+            {WEEKDAY_LABELS.map(d => (
+              <th key={d} style={{ textAlign: 'center', padding: 8, borderBottom: `2px solid ${PALETTE.border}`, background: PALETTE.backgroundSecondary, fontWeight: 600, fontSize: 13, color: PALETTE.textSecondary }}>{d}</th>
+            ))}
+          </tr>
         </thead>
         <tbody>
-          {rows.map((row,ri)=> (
+          {rows.map((row, ri) => (
             <tr key={ri}>
-              {row.map((cell,ci)=> (
-                <td key={ci} style={{ verticalAlign:'top', border:'1px solid #eee', height:100, padding:6 }}>
-                  {cell && (
-                    <div>
-                      <div style={{ fontSize:12, color: cell.getUTCMonth()===viewDate.getUTCMonth() ? undefined:'#999' }}>{cell.getUTCDate()}</div>
-                      <div style={{ marginTop:6 }}>
-                        {(() => { const a = assignmentForDate(cell); if(a) return <div style={{ background:'#eef', padding:4, borderRadius:4 }}>{workers.find(w=>w.id===a.workerId)?.name ?? a.workerId}</div>; return null })()}
+              {row.map((cell, ci) => {
+                if (!cell) return <td key={ci} style={cellStyle} />;
+                const iso = toISO(cell);
+                const dayData = calendar[iso];
+                const entries = dayData?.entries ?? [];
+                const holiday = dayData?.holiday;
+                const hasManual = entries.some(e => e.source === 'MANUAL');
+                const hasRotation = entries.some(e => e.source === 'ROTATION');
+                const firstEntry = entries[0];
+                const isCurrentMonth = cell.getUTCMonth() === viewDate.getUTCMonth();
+                const isToday = iso === toISO(new Date());
+
+                return (
+                  <td key={ci} style={{
+                        ...cellStyle,
+                        background: isToday ? PALETTE.todayBg : isCurrentMonth ? PALETTE.cardBg : PALETTE.notCurrentBg,
+                        outline: selectedDay === iso ? `2px solid ${PALETTE.primary}` : undefined,
+                        cursor: 'pointer',
+                    }}
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest('button')) return;
+                      setSelectedDay(prev => prev === iso ? null : iso);
+                    }}
+                  >
+                      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          {holiday && (
+                            <span title={holiday.name ?? 'Feriado'} style={{ position: 'absolute', left: 2, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: PALETTE.warning }}>★</span>
+                          )}
+                          <span style={{ display: 'block', margin: '0 auto', fontSize: 20, fontWeight: 600, color: isCurrentMonth ? PALETTE.textPrimary : PALETTE.textDisabled }}>
+                            {cell.getUTCDate()}
+                          </span>
+                          <button
+                            title="Novo rodízio a partir deste dia"
+                            onClick={() => { setRotModal('new'); setRotScheduleFrom(iso); }}
+                            style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', fontSize: 12, lineHeight: 1, padding: '0 4px', cursor: 'pointer', background: 'none', border: `1px solid ${PALETTE.plusBtnBorder}`, borderRadius: 4, color: PALETTE.primary, fontWeight: 700 }}
+                          >+</button>
+                        </div>
+                      <div style={{ marginTop: 4, flexGrow: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 2 }}>
+                        {entries.length === 0 && holiday ? (
+                          <div style={{
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            background: `${PALETTE.warning}22`,
+                            borderLeft: `3px solid ${PALETTE.warning}`,
+                            overflow: 'hidden',
+                          }}>
+                            <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: PALETTE.warning }}>{holiday.name ?? 'Feriado'}</div>
+                          </div>
+                        ) : entries.map((entry, ei) => (
+                          <div key={ei} style={{
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            background: entry.workerColor
+                              ? `${entry.workerColor}22`
+                              : entry.source === 'MANUAL' ? `${PALETTE.success}22` : `${PALETTE.info}22`,
+                            borderLeft: entry.workerColor ? `3px solid ${entry.workerColor}` : undefined,
+                            overflow: 'hidden',
+                            flexShrink: 0,
+                          }}>
+                            <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: PALETTE.textPrimary, fontSize: 11 }}>
+                              {entry.source === 'MANUAL' && (
+                                <span title="Atribuição manual" style={{ color: PALETTE.success, marginRight: 6, fontSize: 12 }}>●</span>
+                              )}
+                              {entry.workerName ?? entry.workerId ?? '—'}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <div style={{ marginTop:6 }}><button onClick={()=>openEdit(cell)}>Edit</button></div>
+                      <div style={{ marginTop: 'auto', paddingTop: 2, display: 'flex', gap: 4 }}>
+                        {entries.length > 0 ? (
+                          hasRotation && !hasManual ? (
+                            <>
+                              <button
+                                style={{ ...btnSmallBlue, flex: 1 }}
+                                onClick={() => {
+                                  const rotEntry = entries.find(e => e.rotationId);
+                                  const rot = rotEntry ? rotations.find(r => r.id === rotEntry.rotationId) : null;
+                                  if (rot) {
+                                    setRotModal(rot);
+                                    setRotScheduleFrom(iso);
+                                  }
+                                }}
+                              >
+                                Rodízio
+                              </button>
+                              <button
+                                style={btnSmallBlue}
+                                onClick={() => {
+                                  setEditDate(iso);
+                                  setEditWorkerIds(entries.map(e => e.workerId).filter((id): id is number => id != null));
+                                  setEditNote(entries[0]?.note ?? '');
+                                }}
+                              >
+                                Override
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                style={{ ...btnSmallBlue, flex: 1 }}
+                                onClick={() => {
+                                  setEditDate(iso);
+                                  setEditWorkerIds(entries.map(e => e.workerId).filter((id): id is number => id != null));
+                                  setEditNote(entries[0]?.note ?? '');
+                                }}
+                              >
+                                Editar
+                              </button>
+                              {hasManual && (
+                                <button
+                                  style={btnSmallRed}
+                                  onClick={() => removeOverride(iso)}
+                                >✕</button>
+                              )}
+                            </>
+                          )
+                        ) : (
+                          <button
+                            style={{ ...btnSmallBlue, flex: 1 }}
+                            onClick={() => { setEditDate(iso); setEditWorkerIds([]); setEditNote(''); }}
+                          >
+                            Atribuir
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </td>
-              ))}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
 
-      {editingDate && (
-        <div style={{ position:'fixed', left:0,top:0,right:0,bottom:0, background:'rgba(0,0,0,0.3)', display:'flex',alignItems:'center',justifyContent:'center' }}>
-          <div style={{ background:'#fff', padding:16, width:360, borderRadius:6 }}>
-            <h3>Edit {editingDate}</h3>
-            <label>Worker
-              <select value={selectedWorker as any} onChange={e=>setSelectedWorker(e.target.value?Number(e.target.value):'')}>
-                <option value="">-- none --</option>
-                {workers.map(w=> <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-            </label>
-            <div style={{ marginTop:8 }}>
-              <label style={{display:'flex',gap:8,alignItems:'center'}}>
-                <input type="checkbox" checked={applyFuture} onChange={e=>setApplyFuture(e.target.checked)} />
-                <span>Apply to future weeks</span>
-              </label>
-              {applyFuture && (
-                <div style={{ marginTop:8 }}>
-                  <label>Weeks horizon <input type="number" value={horizonWeeks} onChange={e=>setHorizonWeeks(Number(e.target.value)||0)} style={{ width:80, marginLeft:8 }} /></label>
-                </div>
-              )}
-
-              <div style={{ marginTop:8 }}>
-                <label style={{display:'flex',gap:8,alignItems:'center'}}>
-                  <input type="checkbox" checked={scheduleChange} onChange={e=>setScheduleChange(e.target.checked)} />
-                  <span>Schedule change from selected date</span>
-                </label>
-                {scheduleChange && rotationOrder && rotationOrder.length>0 && (
-                  <div style={{ marginTop:8, border:'1px solid #eee', padding:8 }}>
-                    <div style={{ fontSize:12, marginBottom:6 }}>Rotation order (top = will apply on selected date)</div>
-                    {rotationOrder.map((r, idx)=> (
-                      <div key={r.workerId} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-                        <div>{idx+1}. {workers.find(w=>w.id===r.workerId)?.name ?? r.workerId} ({r.workerId})</div>
-                        <div style={{ display:'flex', gap:6 }}>
-                          <button disabled={idx===0} onClick={()=>{ setRotationOrder(o=>{ const c=[...o]; const t=c[idx-1]; c[idx-1]=c[idx]; c[idx]=t; return c; }); }}>↑</button>
-                          <button disabled={idx===rotationOrder.length-1} onClick={()=>{ setRotationOrder(o=>{ const c=[...o]; const t=c[idx+1]; c[idx+1]=c[idx]; c[idx]=t; return c; }); }}>↓</button>
-                          <button onClick={()=>{ setRotationOrder(o=>o.filter((_,i)=>i!==idx)); }}>Remove</button>
-                        </div>
-                      </div>
-                    ))}
-                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                      <select onChange={e=>{ if(e.target.value){ setRotationOrder(o=>[...o, { workerId: Number(e.target.value) }]); e.target.value=''; } }}>
-                        <option value="">-- add worker --</option>
-                        {workers.filter(w=>!rotationOrder.some(r=>r.workerId===w.id)).map(w=> <option key={w.id} value={w.id}>{w.name} ({w.id})</option>)}
-                      </select>
-                      <div style={{ fontSize:12, color:'#666' }}>Add to end of rotation</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div style={{ marginTop:12, display:'flex', gap:8 }}>
-              <button onClick={saveEdit} disabled={scheduleChange && (!rotationOrder || rotationOrder.length===0)}>Save</button>
-              <button onClick={()=>setEditingDate(null)}>Cancel</button>
-            </div>
-          </div>
         </div>
+
+        {/* Painel de informações do dia */}
+        {selectedDay && (
+          <DayInfoPanel
+            date={selectedDay}
+            dayData={calendar[selectedDay] ?? null}
+            workers={workers}
+            rotations={rotations}
+            onClose={() => setSelectedDay(null)}
+          />
+        )}
+      </div>
+
+      {/* Modal de override manual */}
+      {editDate && (
+        <Modal onClose={() => setEditDate(null)}>
+          <h3 style={{ marginTop: 0 }}>Editar dia {editDate}</h3>
+
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Trabalhadores</div>
+            {editWorkerIds.length === 0 && <div style={{ fontSize: 12, color: PALETTE.textDisabled, marginBottom: 4 }}>Nenhum trabalhador selecionado</div>}
+            {editWorkerIds.map((wId, idx) => {
+              const w = workers.find(x => x.id === wId);
+              return (
+                <div key={wId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', marginBottom: 4, background: PALETTE.hoverBg, borderRadius: 6 }}>
+                  <span style={{ fontWeight: 500, color: PALETTE.textPrimary }}>{idx + 1}. {w?.name ?? `#${wId}`}</span>
+                  <button onClick={() => setEditWorkerIds(ids => ids.filter(id => id !== wId))} style={{ ...btnSmall, color: PALETTE.error, background: `${PALETTE.error}22`, borderColor: PALETTE.error }}>✕</button>
+                </div>
+              );
+            })}
+            <select
+              style={{ marginTop: 4, padding: 6, width: '100%', backgroundColor: PALETTE.cardBg, color: PALETTE.textPrimary, border: `1px solid ${PALETTE.border}` }}
+              value=""
+              onChange={e => { if (e.target.value) setEditWorkerIds(ids => [...ids, Number(e.target.value)]); }}
+            >
+              <option value="">— adicionar trabalhador —</option>
+              {workers.filter(w => !editWorkerIds.includes(w.id)).map(w => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <label style={{ display: 'block', marginBottom: 12 }}>
+            Nota (opcional)
+            <textarea
+              value={editNote}
+              onChange={e => setEditNote(e.target.value)}
+              rows={3}
+              placeholder="Adicionar uma nota para este dia..."
+              style={{ width: '100%', marginTop: 4, padding: 6, backgroundColor: PALETTE.cardBg, color: PALETTE.textPrimary, border: `1px solid ${PALETTE.border}`, borderRadius: 4, resize: 'vertical', fontFamily: 'inherit' }}
+            />
+          </label>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={() => setEditDate(null)} style={btnCancel}>Cancelar</button>
+            <button onClick={saveManualOverride} style={btnConfirm}>Salvar</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal de rodízio */}
+      {rotModal !== null && (
+        <RotationModal
+          rotation={rotModal === 'new' ? null : rotModal}
+          workers={workers}
+          scheduleFrom={rotScheduleFrom}
+          onClose={() => { setRotModal(null); setRotScheduleFrom(null); }}
+          onSaved={async () => { await loadRotations(); await loadCalendar(viewDate); setRotModal(null); setRotScheduleFrom(null); }}
+        />
       )}
     </div>
   );
 }
+
+/* ══════════════════════════════════════════════════════
+   Componente: Painel de informações do dia
+   ══════════════════════════════════════════════════════ */
+function DayInfoPanel({ date, dayData, workers, rotations, onClose }: {
+  date: string;
+  dayData: DayData | null;
+  workers: Worker[];
+  rotations: Rotation[];
+  onClose: () => void;
+}) {
+  const d = new Date(date + 'T00:00:00Z');
+  const dayOfWeek = WEEKDAY_LABELS[d.getUTCDay()];
+  const formattedDate = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+  const entries = dayData?.entries ?? [];
+  const holiday = dayData?.holiday;
+  const notes = Array.from(new Set(entries.map(e => e.note).filter(Boolean)));
+  const sources = [...new Set(entries.map(e => e.source))];
+
+  return (
+    <aside style={{
+      width: 280,
+      backgroundColor: PALETTE.backgroundSecondary,
+      borderRadius: 8,
+      padding: 16,
+      border: `1px solid ${PALETTE.border}`,
+      overflow: 'auto',
+      flexShrink: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12,
+    }}>
+      {/* Cabeçalho */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 16, color: PALETTE.textPrimary }}>{dayOfWeek}</div>
+          <div style={{ fontSize: 13, color: PALETTE.textSecondary, marginTop: 2 }}>{formattedDate}</div>
+        </div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: PALETTE.textSecondary, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 4px' }}>✕</button>
+      </div>
+
+      <div style={{ height: 1, background: PALETTE.border }} />
+
+      {/* Feriado */}
+      {holiday && (
+        <div style={{ background: `${PALETTE.warning}18`, border: `1px solid ${PALETTE.warning}44`, borderRadius: 6, padding: '8px 10px' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: PALETTE.warning, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Feriado</div>
+          <div style={{ fontSize: 14, fontWeight: 500, color: PALETTE.textPrimary }}>{holiday.name ?? 'Feriado'}</div>
+          {holiday.recurring && <div style={{ fontSize: 11, color: PALETTE.textSecondary, marginTop: 2 }}>Recorrente (anual)</div>}
+        </div>
+      )}
+
+      {/* Trabalhadores */}
+      <div style={{ background: PALETTE.cardBg, borderRadius: 6, padding: '10px 12px' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: PALETTE.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+          {entries.length > 1 ? `Trabalhadores (${entries.length})` : 'Trabalhador'}
+        </div>
+        {entries.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {entries.map((entry, i) => {
+              const w = entry.workerId ? workers.find(x => x.id === entry.workerId) : null;
+              return (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {entry.workerColor && (
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: entry.workerColor, flexShrink: 0 }} />
+                  )}
+                  <span style={{ fontSize: 14, fontWeight: 500, color: PALETTE.textPrimary }}>
+                    {entry.source === 'MANUAL' && (
+                      <span title="Atribuição manual" style={{ color: PALETTE.success, marginRight: 8, fontSize: 12 }}>●</span>
+                    )}
+                    {entry.workerName ?? '—'}
+                  </span>
+                  <span style={{
+                    fontSize: 10,
+                    padding: '1px 5px',
+                    borderRadius: 3,
+                    background: entry.source === 'MANUAL' ? `${PALETTE.success}22` : `${PALETTE.info}22`,
+                    color: entry.source === 'MANUAL' ? PALETTE.success : PALETTE.info,
+                  }}>
+                    {entry.source === 'MANUAL' ? 'manual' : 'rodízio'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <span style={{ fontSize: 14, color: PALETTE.textDisabled }}>Nenhum atribuído</span>
+        )}
+      </div>
+
+      {/* Fonte / Rodízio */}
+      {entries.some(e => e.rotationId) && (
+        <div style={{ background: PALETTE.cardBg, borderRadius: 6, padding: '10px 12px' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: PALETTE.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Rodízio</div>
+          {entries.filter(e => e.rotationId).map((entry, i) => {
+            const rotation = rotations.find(r => r.id === entry.rotationId);
+            return (
+              <div key={i} style={{ fontSize: 12, color: PALETTE.textSecondary }}>
+                <strong style={{ color: PALETTE.textPrimary }}>{rotation?.name || entry.rotationName || `#${entry.rotationId}`}</strong>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Notas */}
+      {notes.length > 0 && (
+        <div style={{ background: PALETTE.cardBg, borderRadius: 6, padding: '10px 12px' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: PALETTE.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Notas</div>
+          {notes.map((note, i) => (
+            <div key={i} style={{ fontSize: 13, color: PALETTE.textPrimary, lineHeight: 1.4, marginBottom: i < notes.length - 1 ? 4 : 0 }}>{note}</div>
+          ))}
+        </div>
+      )}
+
+      {/* Informações extras */}
+      <div style={{ background: PALETTE.cardBg, borderRadius: 6, padding: '10px 12px' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: PALETTE.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Detalhes</div>
+        <div style={{ fontSize: 12, color: PALETTE.textSecondary, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div>Dia da semana: <span style={{ color: PALETTE.textPrimary }}>{dayOfWeek}</span></div>
+          <div>Data ISO: <span style={{ color: PALETTE.textPrimary }}>{date}</span></div>
+          {entries.length > 0 && <div>Escalados: <span style={{ color: PALETTE.textPrimary }}>{entries.length}</span></div>}
+          {d.getUTCDay() === 0 || d.getUTCDay() === 6 ? (
+            <div style={{ color: PALETTE.warning, fontWeight: 500 }}>Fim de semana</div>
+          ) : null}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ══════════════════════════════════════════════════════
+   Componente: Modal genérico
+   ══════════════════════════════════════════════════════ */
+function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: PALETTE.cardBg, padding: 20, borderRadius: 10, width: 440, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.6)', color: PALETTE.textPrimary }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════
+   Componente: Modal de criar/editar rodízio
+   ══════════════════════════════════════════════════════ */
+function RotationModal({ rotation, workers, onClose, onSaved, scheduleFrom }: {
+  rotation: Rotation | null;
+  workers: Worker[];
+  onClose: () => void;
+  onSaved: () => void;
+  scheduleFrom?: string | null;
+}) {
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const rotationStarted = !!(rotation && rotation.startDate && rotation.startDate.slice(0, 10) < todayISO);
+
+  const [name, setName] = useState(rotation?.name ?? '');
+  const [weekdays, setWeekdays] = useState<number[]>(rotation?.weekdays ?? []);
+  const [workerIds, setWorkerIds] = useState<number[]>(rotation?.workerIds ?? []);
+  const [startDate, setStartDate] = useState(rotation?.startDate?.slice(0, 10) ?? scheduleFrom ?? todayISO);
+  const [saving, setSaving] = useState(false);
+  const [scheduleChange, setScheduleChange] = useState(rotationStarted);
+  const [scheduleDate, setScheduleDate] = useState(scheduleFrom ?? (rotationStarted ? todayISO : ''));
+
+  const toggleWeekday = (d: number) =>
+    setWeekdays(w => w.includes(d) ? w.filter(x => x !== d) : [...w, d].sort());
+
+  const addWorker = (id: number) => { if (!workerIds.includes(id)) setWorkerIds([...workerIds, id]); };
+  const removeWorker = (idx: number) => setWorkerIds(w => w.filter((_, i) => i !== idx));
+  const moveUp = (idx: number) => {
+    if (idx <= 0) return;
+    setWorkerIds(w => { const c = [...w]; [c[idx - 1], c[idx]] = [c[idx], c[idx - 1]]; return c; });
+  };
+  const moveDown = (idx: number) => {
+    if (idx >= workerIds.length - 1) return;
+    setWorkerIds(w => { const c = [...w]; [c[idx + 1], c[idx]] = [c[idx], c[idx + 1]]; return c; });
+  };
+
+  // pré-preenche a data de agendamento ao abrir
+  // Se o rodízio já começou (startDate < hoje), força agendamento
+  useEffect(() => {
+    if (rotationStarted) {
+      setScheduleChange(true);
+      setScheduleDate(scheduleFrom ?? todayISO);
+    } else {
+      setScheduleChange(false);
+      setScheduleDate(scheduleFrom ?? '');
+    }
+  }, [rotation, scheduleFrom]);
+
+  const save = async () => {
+    if (weekdays.length === 0) return alert('Selecione ao menos um dia da semana.');
+    if (workerIds.length < 1) return alert('Selecione ao menos 1 trabalhador para o rodízio.');
+    if (!startDate) return alert('Data de início é obrigatória.');
+    setSaving(true);
+    const body = { name: name || null, weekdays, workerIds, startDate };
+    try {
+      if (rotation) {
+        if (scheduleChange && scheduleDate) {
+          // Agendamento: muda a ordem a partir de scheduleDate.
+          if (scheduleDate < todayISO) {
+            alert('A data da mudança não pode ser anterior a hoje.');
+            setSaving(false);
+            return;
+          }
+
+          const newBody = {
+            name: name || rotation.name || null,
+            weekdays,
+            workerIds,
+            startDate: scheduleDate,
+          };
+
+          // Se já existe um rodízio com essa mesma data de início, atualiza-o
+          // em vez de criar duplicata.
+          let existingId: number | null = null;
+          try {
+            const allRes = await fetch(`${API}/rotations`);
+            const allRots: Rotation[] = await allRes.json();
+            const dup = allRots.find(
+              r => r.id !== rotation.id &&
+                   r.startDate?.slice(0, 10) === scheduleDate &&
+                   JSON.stringify(r.weekdays) === JSON.stringify(weekdays)
+            );
+            if (dup) existingId = dup.id;
+          } catch { }
+
+          if (existingId) {
+            await fetch(`${API}/rotations/${existingId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newBody),
+            });
+          } else {
+            await fetch(`${API}/rotations`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newBody),
+            });
+          }
+        } else {
+          // Edição direta (rodízio ainda não começou)
+          await fetch(`${API}/rotations/${rotation.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+        }
+      } else {
+        await fetch(`${API}/rotations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      }
+      onSaved();
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao salvar rodízio.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <h3 style={{ marginTop: 0 }}>{rotation ? 'Editar Rodízio' : 'Novo Rodízio'}</h3>
+
+      <label style={{ display: 'block', marginBottom: 12 }}>
+        Nome (opcional)
+        <input value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', marginTop: 4, padding: 6, backgroundColor: PALETTE.backgroundSecondary, color: PALETTE.textPrimary, border: `1px solid ${PALETTE.border}` }} placeholder="Ex: Plantão fim de semana" />
+      </label>
+
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Dias da semana</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {WEEKDAY_LABELS.map((label, i) => (
+            <button
+              key={i}
+              onClick={() => toggleWeekday(i)}
+              type="button"
+              style={{
+                padding: '6px 10px',
+                borderRadius: 6,
+                border: weekdays.includes(i) ? `2px solid ${PALETTE.primary}` : `1px solid ${PALETTE.border}`,
+                background: weekdays.includes(i) ? PALETTE.hoverBg : PALETTE.backgroundSecondary,
+                fontWeight: weekdays.includes(i) ? 700 : 400,
+                cursor: 'pointer',
+                color: '#fff',
+              }}
+            >{label}</button>
+          ))}
+        </div>
+      </div>
+
+      <label style={{ display: 'block', marginBottom: 12 }}>
+        Data de início
+        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ width: '100%', marginTop: 4, padding: 6, backgroundColor: PALETTE.backgroundSecondary, color: PALETTE.textPrimary, border: `1px solid ${PALETTE.border}` }} />
+      </label>
+
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Ordem dos trabalhadores</div>
+        <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginBottom: 8 }}>
+          O primeiro da lista será responsável na primeira semana a partir da data de início, o segundo na semana seguinte, e assim por diante.
+        </div>
+        {workerIds.length === 0 && <div style={{ fontSize: 12, color: PALETTE.textDisabled }}>Nenhum trabalhador selecionado</div>}
+        {workerIds.map((wId, idx) => {
+          const w = workers.find(x => x.id === wId);
+          return (
+            <div key={`${wId}-${idx}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', marginBottom: 4, background: PALETTE.hoverBg, borderRadius: 6 }}>
+              <span style={{ fontWeight: 500, color: PALETTE.textPrimary }}>{idx + 1}. {w?.name ?? `#${wId}`}</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button disabled={idx === 0} onClick={() => moveUp(idx)} style={btnSmall}>↑</button>
+                <button disabled={idx === workerIds.length - 1} onClick={() => moveDown(idx)} style={btnSmall}>↓</button>
+                <button onClick={() => removeWorker(idx)} style={{ ...btnSmall, color: PALETTE.error, background: `${PALETTE.error}22`, borderColor: PALETTE.error }}>✕</button>
+              </div>
+            </div>
+          );
+        })}
+        <select
+          style={{ marginTop: 8, padding: 6, width: '100%', backgroundColor: PALETTE.backgroundSecondary, color: PALETTE.textPrimary, border: `1px solid ${PALETTE.border}` }}
+          value=""
+          onChange={e => { if (e.target.value) addWorker(Number(e.target.value)); }}
+        >
+          <option value="">— adicionar trabalhador —</option>
+          {workers.filter(w => !workerIds.includes(w.id)).map(w => (
+            <option key={w.id} value={w.id}>{w.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {rotation && (
+        <div style={{ marginBottom: 12, marginTop: 4 }}>
+          {rotationStarted && (
+            <div style={{ fontSize: 12, color: PALETTE.warning, background: '#3B2A12', padding: '6px 10px', borderRadius: 6, marginBottom: 8 }}>
+              Este rodízio já está em vigor. Alterações serão agendadas a partir de uma data futura.
+            </div>
+          )}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={scheduleChange}
+              disabled={rotationStarted}
+              onChange={e => setScheduleChange(e.target.checked)}
+            />
+            <span>Agendar mudança de ordem a partir de uma data</span>
+          </label>
+          {scheduleChange && (
+            <div style={{ marginTop: 8 }}>
+              <input
+                type="date"
+                value={scheduleDate}
+                min={todayISO}
+                onChange={e => setScheduleDate(e.target.value)}
+                style={{ backgroundColor: PALETTE.backgroundSecondary, color: PALETTE.textPrimary, border: `1px solid ${PALETTE.border}`, padding: 4 }}
+              />
+              <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 4 }}>
+                Antes dessa data, o rodízio continua com a ordem atual.
+                A partir dela, passa a usar a nova ordem definida acima.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button onClick={onClose} style={btnCancel}>Cancelar</button>
+        <button onClick={save} disabled={saving} style={btnConfirm}>
+          {saving ? 'Salvando...' : rotation ? 'Salvar' : 'Criar'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ── estilos inline reutilizáveis ── */
+const cellStyle: React.CSSProperties = {
+  verticalAlign: 'top',
+  border: `1px solid ${PALETTE.border}`,
+  padding: 4,
+  overflow: 'hidden',
+  height: 100,
+};
+
+/* Azul – criar / editar */
+const btnPrimary: React.CSSProperties = {
+  background: PALETTE.primary,
+  color: '#fff',
+  border: 'none',
+  padding: '8px 16px',
+  borderRadius: 6,
+  cursor: 'pointer',
+  fontWeight: 600,
+};
+
+/* Verde – confirmar / salvar */
+const btnConfirm: React.CSSProperties = {
+  background: PALETTE.success,
+  color: '#fff',
+  border: 'none',
+  padding: '8px 16px',
+  borderRadius: 6,
+  cursor: 'pointer',
+  fontWeight: 600,
+};
+
+/* Vermelho – cancelar */
+const btnCancel: React.CSSProperties = {
+  background: 'transparent',
+  color: PALETTE.error,
+  border: `1px solid ${PALETTE.error}`,
+  padding: '8px 16px',
+  borderRadius: 6,
+  cursor: 'pointer',
+  fontWeight: 600,
+};
+
+/* Vermelho sólido – apagar / excluir */
+const btnDanger: React.CSSProperties = {
+  background: PALETTE.error,
+  color: '#fff',
+  border: 'none',
+  padding: '8px 16px',
+  borderRadius: 6,
+  cursor: 'pointer',
+  fontWeight: 600,
+};
+
+/* Botão pequeno neutro (↑ ↓ etc.) */
+const btnSmall: React.CSSProperties = {
+  fontSize: 12,
+  padding: '2px 8px',
+  cursor: 'pointer',
+  background: PALETTE.hoverBg,
+  color: PALETTE.textPrimary,
+  border: `1px solid ${PALETTE.border}`,
+  borderRadius: 4,
+};
+
+/* Botão pequeno azul – editar / criar (células) */
+const btnSmallBlue: React.CSSProperties = {
+  fontSize: 10,
+  padding: '2px 6px',
+  cursor: 'pointer',
+  background: PALETTE.primary,
+  color: '#fff',
+  border: 'none',
+  borderRadius: 4,
+  fontWeight: 500,
+};
+
+/* Botão pequeno vermelho – excluir (células) */
+const btnSmallRed: React.CSSProperties = {
+  fontSize: 10,
+  padding: '2px 6px',
+  cursor: 'pointer',
+  background: PALETTE.error,
+  color: '#fff',
+  border: 'none',
+  borderRadius: 4,
+  fontWeight: 500,
+};
+
+/* Botão pequeno azul – editar sidebar */
+const btnSmallBlueSidebar: React.CSSProperties = {
+  fontSize: 12,
+  padding: '2px 8px',
+  cursor: 'pointer',
+  background: PALETTE.primary,
+  color: '#fff',
+  border: 'none',
+  borderRadius: 4,
+  fontWeight: 500,
+};
+
+/* Botão pequeno vermelho – apagar sidebar */
+const btnSmallRedSidebar: React.CSSProperties = {
+  fontSize: 12,
+  padding: '2px 8px',
+  cursor: 'pointer',
+  background: PALETTE.error,
+  color: '#fff',
+  border: 'none',
+  borderRadius: 4,
+  fontWeight: 500,
+};
+
+const btnNav: React.CSSProperties = {
+  padding: '6px 14px',
+  cursor: 'pointer',
+  border: `1px solid ${PALETTE.border}`,
+  borderRadius: 6,
+  background: PALETTE.hoverBg,
+  color: PALETTE.textPrimary,
+  fontWeight: 500,
+};

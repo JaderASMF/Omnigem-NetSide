@@ -4,11 +4,13 @@ import { WorkersService } from './workers.service';
 class CreateWorkerDto {
   name: string;
   email?: string;
+  color?: string;
 }
 
 class UpdateWorkerDto {
   name?: string;
   email?: string;
+  color?: string;
   active?: boolean;
 }
 

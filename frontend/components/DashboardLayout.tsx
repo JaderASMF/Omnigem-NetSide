@@ -26,10 +26,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <p style={{marginTop:4,marginBottom:12}}>Role: <strong>{role}</strong></p>
         <nav style={{display:'flex',flexDirection:'column',gap:8}}>
           <a href="/dashboard">Dashboard</a>
-          <a href="/workers">Workers</a>
-          <a href="/holidays">Holidays</a>
-          <a href="/recurring-patterns">Recurring Patterns</a>
-          <a href="/assignments">Assignments</a>
+          <a href="/calendar">Calendário / Rodízios</a>
+          <a href="/workers">Trabalhadores</a>
+          <a href="/holidays">Feriados</a>
+          <a href="/assignments">Atribuições (manual)</a>
         </nav>
         <div style={{marginTop:20}}>
           <button onClick={logout}>Logout</button>

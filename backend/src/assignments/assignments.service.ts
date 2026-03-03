@@ -82,8 +82,8 @@ export class AssignmentsService {
           if (((weeksSince % interval) + interval) % interval !== (offset % interval)) continue;
         }
 
-        // check existing assignment
-        const existing = await this.prisma.assignment.findUnique({ where: { date: new Date(d) as any } }).catch(()=>null);
+        // check existing assignment for same date+worker
+        const existing = await this.prisma.assignment.findFirst({ where: { date: new Date(d), workerId: p.workerId } }).catch(()=>null);
         if (existing) {
           // keep manual assignments; if existing is RECURRENT, skip (already present)
           continue;

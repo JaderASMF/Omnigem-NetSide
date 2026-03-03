@@ -27,6 +27,7 @@ model Worker {
   id        Int      @id @default(autoincrement())
   name      String
   email     String?  @unique
+  color     String?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   // relations
@@ -60,15 +61,28 @@ model RecurringPattern {
 // Atribuição explícita por dia. Pode ser gerada a partir de padrões recorrentes.
 model Assignment {
   id         Int      @id @default(autoincrement())
-  date       DateTime @unique
+  date       DateTime
   workerId   Int?
   worker     Worker?  @relation(fields: [workerId], references: [id])
   source     AssignmentSource @default(MANUAL)
   note       String?
   createdAt  DateTime @default(now())
+
+  @@unique([date, workerId])
 }
 
 enum AssignmentSource {
   MANUAL
   RECURRENT
+}
+
+// Rodízio simplificado: lista ordenada de trabalhadores + dias da semana.
+// A cada semana, o próximo trabalhador da lista é responsável pelos dias configurados.
+model Rotation {
+  id          Int      @id @default(autoincrement())
+  name        String?
+  weekdays    Int[]    // 0=domingo .. 6=sábado
+  workerIds   Int[]    // IDs dos trabalhadores na ordem do rodízio
+  startDate   DateTime // data de início (usada como âncora para calcular a semana)
+  createdAt   DateTime @default(now())
 }

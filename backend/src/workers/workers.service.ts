@@ -13,11 +13,11 @@ export class WorkersService {
     return this.prisma.worker.findUnique({ where: { id } });
   }
 
-  create(data: { name: string; email?: string }) {
+  create(data: { name: string; email?: string; color?: string }) {
     return this.prisma.worker.create({ data });
   }
 
-  update(id: number, data: { name?: string; email?: string; active?: boolean }) {
+  update(id: number, data: { name?: string; email?: string; color?: string; active?: boolean }) {
     return this.prisma.worker.update({ where: { id }, data });
   }
 

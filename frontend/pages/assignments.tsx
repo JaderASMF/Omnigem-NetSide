@@ -4,6 +4,7 @@ import AssignmentForm from '../components/AssignmentForm';
 
 export default function AssignmentsPage() {
   const [items, setItems] = useState<any[]>([]);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editing, setEditing] = useState<any | null>(null);
   const API_BASE = (process.env.NEXT_PUBLIC_API_BASE as string) || 'http://localhost:3001';
   const [genStart, setGenStart] = useState('');
@@ -30,6 +31,23 @@ export default function AssignmentsPage() {
 
   const onDelete = async (id: number) => { await fetch(`${API_BASE}/assignments/${id}`, { method: 'DELETE' }); await load(); };
 
+  const toggle = (id:number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+  };
+
+  const toggleAll = (checked:boolean) => {
+    if (checked) setSelectedIds(items.map(i=>i.id));
+    else setSelectedIds([]);
+  };
+
+  const onDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Apagar ${selectedIds.length} atribuição(ões)?`)) return;
+    await Promise.all(selectedIds.map(id => fetch(`${API_BASE}/assignments/${id}`, { method: 'DELETE' })));
+    setSelectedIds([]);
+    await load();
+  };
+
   const onGenerate = async () => {
     if (!genStart || !genEnd) return alert('Informe início e fim');
     const res = await fetch(`${API_BASE}/assignments/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ startDate: genStart, endDate: genEnd }) });
@@ -41,7 +59,11 @@ export default function AssignmentsPage() {
       <h1>Assignments</h1>
       <div style={{ display: 'flex', gap: 24 }}>
         <div style={{ flex: 1 }}>
-          <AssignmentsList items={items} onDelete={onDelete} />
+          <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={onDeleteSelected} disabled={selectedIds.length===0}>Apagar selecionados</button>
+            <div style={{ color: '#666' }}>{selectedIds.length} selecionado(s)</div>
+          </div>
+          <AssignmentsList items={items} onDelete={onDelete} selectedIds={selectedIds} onToggle={toggle} onToggleAll={toggleAll} />
         </div>
         <div style={{ width: 420 }}>
           <AssignmentForm initial={editing} onSave={onCreate} />

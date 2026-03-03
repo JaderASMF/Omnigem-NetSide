@@ -9,6 +9,11 @@
     "dev:backend": "npm --prefix backend run start:dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "build": "concurrently \"npm:build:backend\" \"npm:build:frontend\"",
+    "start:all": "npm run build && npm start",
+    "start": "concurrently \"npm --prefix backend run start\" \"npm --prefix frontend run start\"",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma && npm run seed",
     "prisma:migrate": "prisma migrate dev --schema=prisma/schema.prisma && npm run seed",
     "seed": "npm --prefix backend run seed"

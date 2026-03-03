@@ -1,6 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+// Parse dates coming from the frontend in a timezone-safe way.
+// Strings in the format YYYY-MM-DD are treated as local midnight to
+// avoid the "one day earlier" effect in negative timezones.
+function toPrismaDate(value: Date | string | null | undefined): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value;
+  const s = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return new Date(`${s}T00:00:00`);
+  }
+  return new Date(s as any);
+}
+
 @Injectable()
 export class RecurringPatternsService {
   constructor(private prisma: PrismaService) {}
@@ -28,8 +41,8 @@ export class RecurringPatternsService {
         weekdays: data.weekdays || [],
         weekInterval: data.weekInterval ?? 1,
         weekOffset: data.weekOffset ?? 0,
-        startDate: data.startDate ? new Date(data.startDate as any) : null,
-        endDate: data.endDate ? new Date(data.endDate as any) : null,
+        startDate: toPrismaDate(data.startDate),
+        endDate: toPrismaDate(data.endDate),
         note: data.note ?? null,
       };
       return this.prisma.recurringPattern.create({ data: payload });
@@ -46,8 +59,8 @@ export class RecurringPatternsService {
       if(typeof data.weekdays !== 'undefined') payload.weekdays = data.weekdays;
       if(typeof data.weekInterval !== 'undefined') payload.weekInterval = data.weekInterval;
       if(typeof data.weekOffset !== 'undefined') payload.weekOffset = data.weekOffset;
-      if(typeof data.startDate !== 'undefined') payload.startDate = data.startDate ? new Date(data.startDate as any) : null;
-      if(typeof data.endDate !== 'undefined') payload.endDate = data.endDate ? new Date(data.endDate as any) : null;
+      if(typeof data.startDate !== 'undefined') payload.startDate = toPrismaDate(data.startDate);
+      if(typeof data.endDate !== 'undefined') payload.endDate = toPrismaDate(data.endDate);
       if(typeof data.note !== 'undefined') payload.note = data.note;
       return this.prisma.recurringPattern.update({ where: { id }, data: payload });
     }catch(err){

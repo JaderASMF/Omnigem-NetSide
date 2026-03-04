@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { PALETTE, btnPrimary, inputStyle, selectStyle, cardStyle } from '../styles/theme';
+import { API_BASE } from '../config/api';
 
 export default function AssignmentForm({ initial, onSave }: { initial?: any; onSave: (p:any)=>void }) {
   const [date, setDate] = useState('');
   const [workerId, setWorkerId] = useState<number | ''>('');
   const [note, setNote] = useState('');
   const [workers, setWorkers] = useState<Array<{id:number;name:string}>>([]);
-  const API_BASE = (process.env.NEXT_PUBLIC_API_BASE as string) || 'http://localhost:3001';
+
 
   useEffect(()=>{ if(initial){ setDate(initial.date ? initial.date.slice(0,10) : ''); setWorkerId(initial.workerId ?? ''); setNote(initial.note ?? ''); } }, [initial]);
 

@@ -3,10 +3,10 @@ import { PALETTE, btnSmall } from '../styles/theme';
 
 type Props = {
   items: any[];
-  onDelete: (id:number)=>void;
+  onDelete?: (id:number)=>void;
   selectedIds: number[];
-  onToggle: (id:number)=>void;
-  onToggleAll: (checked:boolean)=>void;
+  onToggle?: (id:number)=>void;
+  onToggleAll?: (checked:boolean)=>void;
 };
 
 export default function AssignmentsList({ items, onDelete, selectedIds, onToggle, onToggleAll }: Props) {
@@ -36,7 +36,7 @@ export default function AssignmentsList({ items, onDelete, selectedIds, onToggle
         <thead>
           <tr style={{ background: PALETTE.backgroundSecondary }}>
             <th style={{ ...thStyle, width: 40, textAlign: 'center' }}>
-              <input type="checkbox" checked={allSelected} onChange={e => onToggleAll(e.target.checked)} style={{ accentColor: PALETTE.primary }} />
+              {onToggleAll && <input type="checkbox" checked={allSelected} onChange={e => onToggleAll(e.target.checked)} style={{ accentColor: PALETTE.primary }} />}
             </th>
             <th style={thStyle}>Data</th>
             <th style={thStyle}>Trabalhador</th>
@@ -49,7 +49,7 @@ export default function AssignmentsList({ items, onDelete, selectedIds, onToggle
           {items.map(a => (
             <tr key={a.id} style={{ transition: 'background 0.15s' }}>
               <td style={{ ...tdStyle, textAlign: 'center' }}>
-                <input type="checkbox" checked={selectedIds.includes(a.id)} onChange={() => onToggle(a.id)} style={{ accentColor: PALETTE.primary }} />
+                {onToggle && <input type="checkbox" checked={selectedIds.includes(a.id)} onChange={() => onToggle(a.id)} style={{ accentColor: PALETTE.primary }} />}
               </td>
               <td style={tdStyle}>{new Date(a.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
               <td style={tdStyle}>{a.workerId ?? '—'}</td>
@@ -64,7 +64,7 @@ export default function AssignmentsList({ items, onDelete, selectedIds, onToggle
               </td>
               <td style={{ ...tdStyle, color: a.note ? PALETTE.textPrimary : PALETTE.textDisabled }}>{a.note ?? '—'}</td>
               <td style={tdStyle}>
-                <button onClick={() => onDelete(a.id)} style={{ ...btnSmall, color: PALETTE.error, background: `${PALETTE.error}18`, borderColor: PALETTE.error }}>Apagar</button>
+                {onDelete && <button onClick={() => onDelete(a.id)} style={{ ...btnSmall, color: PALETTE.error, background: `${PALETTE.error}18`, borderColor: PALETTE.error }}>Apagar</button>}
               </td>
             </tr>
           ))}

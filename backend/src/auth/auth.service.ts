@@ -22,6 +22,6 @@ export class AuthService {
     if (!user) throw new UnauthorizedException('Invalid credentials');
     const payload = { sub: user.id, email: user.email, role: user.role };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '8h' });
-    return { accessToken: token };
+    return { accessToken: token, role: user.role };
   }
 }

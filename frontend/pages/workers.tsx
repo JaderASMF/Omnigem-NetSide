@@ -3,5 +3,5 @@ import type { GetServerSideProps } from 'next'
 export default function WorkersPage() { return null }
 
 export const getServerSideProps: GetServerSideProps = async () => ({
-  redirect: { destination: '/dashboard', permanent: false },
+  redirect: { destination: '/dashboard?tab=workers', permanent: false },
 })

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { PALETTE, btnPrimary, btnSmall, inputStyle, cardStyle } from '../styles/theme'
+import { API_BASE, authHeaders, jsonAuthHeaders } from '../config/api'
 
 type Holiday = { id: number; date: string; name?: string; recurring: boolean }
 
-export default function HolidaysContent() {
+export default function HolidaysContent({ readOnly = false }: { readOnly?: boolean }) {
   const [list, setList] = useState<Holiday[]>([])
   const [date, setDate] = useState('')
   const [name, setName] = useState('')
@@ -13,7 +14,7 @@ export default function HolidaysContent() {
 
   async function fetchHolidays() {
     try {
-      const res = await fetch('http://localhost:3001/holidays')
+      const res = await fetch(`${API_BASE}/holidays`)
       const data = await res.json()
       setList(data || [])
     } catch (e) { console.error(e) }
@@ -22,9 +23,9 @@ export default function HolidaysContent() {
   async function createHoliday(e: any) {
     e.preventDefault()
     try {
-      await fetch('http://localhost:3001/holidays', {
+      await fetch(`${API_BASE}/holidays`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify({ date, name: name || undefined, recurring }),
       })
       setDate('')
@@ -36,7 +37,7 @@ export default function HolidaysContent() {
 
   async function remove(id: number) {
     if (!confirm('Apagar este feriado?')) return
-    await fetch(`http://localhost:3001/holidays/${id}`, { method: 'DELETE' })
+    await fetch(`${API_BASE}/holidays/${id}`, { method: 'DELETE', headers: authHeaders() })
     fetchHolidays()
   }
 
@@ -44,6 +45,7 @@ export default function HolidaysContent() {
     <>
       <h1 style={{ margin: '0 0 20px 0', fontSize: 22, color: PALETTE.textPrimary }}>Feriados</h1>
 
+      {!readOnly && (
       <div style={{ ...cardStyle, maxWidth: 480, marginBottom: 24 }}>
         <h3 style={{ margin: '0 0 16px 0', fontSize: 16, color: PALETTE.textPrimary }}>Novo Feriado</h3>
         <form onSubmit={createHoliday} style={{ display: 'grid', gap: 12 }}>
@@ -65,6 +67,7 @@ export default function HolidaysContent() {
           <button type="submit" style={btnPrimary}>Criar</button>
         </form>
       </div>
+      )}
 
       <h3 style={{ margin: '0 0 12px 0', fontSize: 16, color: PALETTE.textPrimary }}>Lista</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -92,7 +95,7 @@ export default function HolidaysContent() {
                 }}>Recorrente</span>
               )}
             </div>
-            <button onClick={() => remove(h.id)} style={{ ...btnSmall, color: PALETTE.error, background: `${PALETTE.error}18`, borderColor: PALETTE.error }}>Apagar</button>
+            {!readOnly && <button onClick={() => remove(h.id)} style={{ ...btnSmall, color: PALETTE.error, background: `${PALETTE.error}18`, borderColor: PALETTE.error }}>Apagar</button>}
           </div>
         ))}
         {list.length === 0 && <div style={{ color: PALETTE.textDisabled, padding: 16 }}>Nenhum feriado cadastrado</div>}

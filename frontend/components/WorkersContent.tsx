@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { PALETTE, btnPrimary, btnSmall, inputStyle, cardStyle } from '../styles/theme'
 import { useToast } from './ToastProvider'
+import { API_BASE, authHeaders, jsonAuthHeaders } from '../config/api'
 
 type Worker = { id: number; name: string; color?: string; active: boolean }
 
@@ -10,7 +11,7 @@ const COLOR_PRESETS = [
   '#E91E63', '#8BC34A', '#3F51B5', '#FFC107',
 ];
 
-export default function WorkersContent() {
+export default function WorkersContent({ readOnly = false }: { readOnly?: boolean }) {
   const [list, setList] = useState<Worker[]>([])
   const [name, setName] = useState('')
   const [color, setColor] = useState('')
@@ -24,7 +25,7 @@ export default function WorkersContent() {
 
   async function fetchWorkers() {
     try {
-      const res = await fetch('http://localhost:3001/workers')
+      const res = await fetch(`${API_BASE}/workers`)
       const data = await res.json()
       setList(data || [])
     } catch (e) { console.error(e) }
@@ -33,9 +34,9 @@ export default function WorkersContent() {
   async function createWorker(e: any) {
     e.preventDefault()
     try {
-      await fetch('http://localhost:3001/workers', {
+      await fetch(`${API_BASE}/workers`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify({ name, color: color || undefined }),
       })
       setName('')
@@ -53,8 +54,8 @@ export default function WorkersContent() {
     const removeDeps = confirm('Remover todas as atribuições e padrões recorrentes deste trabalhador?\n\nOK = Sim, Cancel = Não')
 
     try {
-      const url = `http://localhost:3001/workers/${id}` + (removeDeps ? '?removeAssignments=true' : '')
-      const res = await fetch(url, { method: 'DELETE' })
+      const url = `${API_BASE}/workers/${id}` + (removeDeps ? '?removeAssignments=true' : '')
+      const res = await fetch(url, { method: 'DELETE', headers: authHeaders() })
       const text = await res.text()
       if (!res.ok) {
         let msg = text || 'Erro ao apagar trabalhador'
@@ -72,9 +73,9 @@ export default function WorkersContent() {
 
   async function updateColor(id: number, newColor: string) {
     try {
-      const res = await fetch(`http://localhost:3001/workers/${id}`, {
+      const res = await fetch(`${API_BASE}/workers/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify({ color: newColor || null }),
       })
       if (!res.ok) {
@@ -98,7 +99,7 @@ export default function WorkersContent() {
       <h1 style={{ margin: '0 0 20px 0', fontSize: 22, color: PALETTE.textPrimary }}>Trabalhadores</h1>
 
       <div style={{ maxWidth: 480, marginBottom: 24, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
-        <button onClick={() => setIsModalOpen(true)} style={btnPrimary}>Adicionar Trabalhador</button>
+        {!readOnly && <button onClick={() => setIsModalOpen(true)} style={btnPrimary}>Adicionar Trabalhador</button>}
       </div>
 
       <h3 style={{ margin: '0 0 12px 0', fontSize: 16, color: PALETTE.textPrimary }}>Lista</h3>
@@ -142,9 +143,9 @@ export default function WorkersContent() {
                 <button onClick={() => setEditingId(null)} style={btnSmall}>✕</button>
               </div>
             ) : (
-              <button onClick={() => { setEditingId(w.id); setEditColor(w.color || ''); }} style={btnSmall}>Cor</button>
+              !readOnly && <button onClick={() => { setEditingId(w.id); setEditColor(w.color || ''); }} style={btnSmall}>Cor</button>
             )}
-            <button onClick={() => remove(w.id)} style={{ ...btnSmall, color: PALETTE.error, background: `${PALETTE.error}18`, borderColor: PALETTE.error }}>Apagar</button>
+            {!readOnly && <button onClick={() => remove(w.id)} style={{ ...btnSmall, color: PALETTE.error, background: `${PALETTE.error}18`, borderColor: PALETTE.error }}>Apagar</button>}
           </div>
         ))}
         {list.length === 0 && <div style={{ color: PALETTE.textDisabled, padding: 16 }}>Nenhum trabalhador cadastrado</div>}

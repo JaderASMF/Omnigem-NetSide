@@ -10,10 +10,10 @@
     "seed": "ts-node-dev --respawn --transpile-only src/prisma/seed.ts"
   },
   "dependencies": {
-    "@nestjs/common": "^9.0.0",
-    "@nestjs/core": "^9.0.0",
-    "@nestjs/platform-express": "^9.0.0",
-    "reflect-metadata": "^0.1.13",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "reflect-metadata": "^0.2.0",
     "rxjs": "^7.0.0",
     "@prisma/client": "6.18.0",
     "bcrypt": "^5.1.0",

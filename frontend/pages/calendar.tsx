@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-
-const API = (process.env.NEXT_PUBLIC_API_BASE as string) || 'http://localhost:3001';
+import { API_BASE as API } from '../config/api';
+import { authHeaders, jsonAuthHeaders } from '../config/api';
 
 // Paleta de cores em modo escuro (tons mais claros/suaves)
 const PALETTE = {
@@ -85,6 +85,12 @@ export default function CalendarPage() {
     const now = new Date();
     return new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
   });
+  // role detection
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    const role = typeof window !== 'undefined' ? localStorage.getItem('plantoes_role') : null;
+    setIsAdmin(role === 'ADMIN');
+  }, []);
   // selectors for month/year (kept in sync with viewDate)
   const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const [selMonth, setSelMonth] = useState<number>(viewDate.getUTCMonth());
@@ -116,7 +122,19 @@ export default function CalendarPage() {
   }, []);
 
   const loadRotations = useCallback(async () => {
-    try { const r = await fetch(`${API}/rotations`); setRotations(await r.json()); } catch { setRotations([]); }
+    try {
+      const r = await fetch(`${API}/rotations`);
+      const data = await r.json();
+      // Ordena do mais recente para o mais antigo (startDate desc)
+      data.sort((a: Rotation, b: Rotation) => {
+        const ta = a.startDate ? new Date(a.startDate).getTime() : 0;
+        const tb = b.startDate ? new Date(b.startDate).getTime() : 0;
+        return tb - ta;
+      });
+      setRotations(data);
+    } catch {
+      setRotations([]);
+    }
   }, []);
 
   const loadCalendar = useCallback(async (d: Date) => {
@@ -164,7 +182,7 @@ export default function CalendarPage() {
       const existing = await res.json();
       for (const a of existing) {
         if (a.date?.slice(0, 10) === editDate && a.source === 'MANUAL') {
-          await fetch(`${API}/assignments/${a.id}`, { method: 'DELETE' });
+          await fetch(`${API}/assignments/${a.id}`, { method: 'DELETE', headers: authHeaders() });
         }
       }
     } catch { }
@@ -172,7 +190,7 @@ export default function CalendarPage() {
     if (editWorkerIds.length === 0) {
       await fetch(`${API}/assignments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify({ date: editDate, workerId: null, note: editNote || undefined }),
       });
     } else {
@@ -180,7 +198,7 @@ export default function CalendarPage() {
       for (const wId of editWorkerIds) {
         await fetch(`${API}/assignments`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: jsonAuthHeaders(),
           body: JSON.stringify({ date: editDate, workerId: wId, note: editNote || undefined }),
         });
       }
@@ -198,7 +216,7 @@ export default function CalendarPage() {
       const existing = await res.json();
       for (const a of existing) {
         if (a.date?.slice(0, 10) === dateStr && a.source === 'MANUAL') {
-          await fetch(`${API}/assignments/${a.id}`, { method: 'DELETE' });
+          await fetch(`${API}/assignments/${a.id}`, { method: 'DELETE', headers: authHeaders() });
         }
       }
     } catch { }
@@ -215,7 +233,7 @@ export default function CalendarPage() {
         <aside style={{ width: 280, backgroundColor: PALETTE.backgroundSecondary, borderRadius: 8, padding: 10, border: `1px solid ${PALETTE.border}`, overflow: 'auto', flexShrink: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <strong style={{ fontSize: 16, color: PALETTE.textPrimary }}>Rodízios</strong>
-            <button onClick={() => setRotModal('new')} style={btnPrimary}>+ Novo</button>
+            {isAdmin && <button onClick={() => setRotModal('new')} style={btnPrimary}>+ Novo</button>}
           </div>
 
           {rotations.length > 0 ? (
@@ -235,8 +253,8 @@ export default function CalendarPage() {
                     </div>
                   )}
                   <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
-                    <button onClick={() => setRotModal(rot)} style={btnSmallBlueSidebar}>Editar</button>
-                    <button onClick={async () => { if (confirm('Apagar este rodízio?')) { await fetch(`${API}/rotations/${rot.id}`, { method: 'DELETE' }); await loadRotations(); await loadCalendar(viewDate); } }} style={btnSmallRedSidebar}>Apagar</button>
+                    {isAdmin && <button onClick={() => setRotModal(rot)} style={btnSmallBlueSidebar}>Editar</button>}
+                    {isAdmin && <button onClick={async () => { if (confirm('Apagar este rodízio?')) { await fetch(`${API}/rotations/${rot.id}`, { method: 'DELETE', headers: authHeaders() }); await loadRotations(); await loadCalendar(viewDate); } }} style={btnSmallRedSidebar}>Apagar</button>}
                   </div>
                 </div>
               ))}
@@ -369,6 +387,7 @@ export default function CalendarPage() {
                               borderRadius: 5,
                               color: hasHighlight ? '#fff' : PALETTE.primary,
                               fontWeight: 800,
+                              display: isAdmin ? undefined : 'none',
                             }}
                           >+</button>
                         </div>
@@ -406,6 +425,8 @@ export default function CalendarPage() {
                         ))}
                       </div>
                       <div style={{ marginTop: 2, paddingTop: 2, display: 'flex', gap: 4 }}>
+                        {isAdmin && (
+                        <>
                         {entries.length > 0 ? (
                           hasRotation && !hasManual ? (
                             <>
@@ -461,6 +482,8 @@ export default function CalendarPage() {
                           >
                             Atribuir
                           </button>
+                        )}
+                        </>
                         )}
                       </div>
                     </div>
@@ -803,13 +826,13 @@ function RotationModal({ rotation, workers, onClose, onSaved, scheduleFrom }: {
           if (existingId) {
             await fetch(`${API}/rotations/${existingId}`, {
               method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
+              headers: jsonAuthHeaders(),
               body: JSON.stringify(newBody),
             });
           } else {
             await fetch(`${API}/rotations`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: jsonAuthHeaders(),
               body: JSON.stringify(newBody),
             });
           }
@@ -825,7 +848,7 @@ function RotationModal({ rotation, workers, onClose, onSaved, scheduleFrom }: {
             const endDateISO = endDateObj.toISOString().slice(0, 10);
             await fetch(`${API}/rotations/${rotation.id}`, {
               method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
+              headers: jsonAuthHeaders(),
               body: JSON.stringify({ name: finalName, endDate: endDateISO }),
             });
           } catch {}
@@ -833,14 +856,14 @@ function RotationModal({ rotation, workers, onClose, onSaved, scheduleFrom }: {
           // Edição direta (rodízio ainda não começou)
           await fetch(`${API}/rotations/${rotation.id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: jsonAuthHeaders(),
             body: JSON.stringify(body),
           });
         }
       } else {
         await fetch(`${API}/rotations`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: jsonAuthHeaders(),
           body: JSON.stringify(body),
         });
       }

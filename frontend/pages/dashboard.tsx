@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import DashboardLayout from '../components/DashboardLayout'
 import { PALETTE } from '../styles/theme'
+import { API_BASE } from '../config/api'
 
 type CalendarEntry = {
   workerId: number | null
@@ -44,7 +45,7 @@ export default function DashboardPage() {
         const startIso = isoDate(today)
         const endIso = isoDate(end)
 
-        const res = await fetch(`http://localhost:3001/rotations/calendar?startDate=${startIso}&endDate=${endIso}`)
+        const res = await fetch(`${API_BASE}/rotations/calendar?startDate=${startIso}&endDate=${endIso}`)
         if (!res.ok) return
 
         const data: CalendarMap = await res.json()
@@ -92,9 +93,10 @@ export default function DashboardPage() {
       }}>
         {[
           { label: 'Calendário / Rodízios', desc: 'Visualizar e gerenciar escalas', icon: '📅', href: '/calendar' },
-          { label: 'Trabalhadores', desc: 'Cadastro de profissionais', icon: '👷' },
-          { label: 'Feriados', desc: 'Gerenciar feriados', icon: '🎉' },
-          { label: 'Atribuições', desc: 'Atribuições manuais', icon: '📋' },
+          { label: 'Trabalhadores', desc: 'Cadastro de profissionais', icon: '👷', href: '/dashboard?tab=workers' },
+          { label: 'Feriados', desc: 'Gerenciar feriados', icon: '🎉', href: '/dashboard?tab=holidays' },
+          { label: 'Atribuições', desc: 'Atribuições manuais', icon: '📋', href: '/dashboard?tab=assignments' },
+          { label: 'Relatórios', desc: 'Relatórios de plantões', icon: '📊', href: '/dashboard?tab=reports' },
         ].map(item => (
           <a
             key={item.label}

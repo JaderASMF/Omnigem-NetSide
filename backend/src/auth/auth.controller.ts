@@ -1,5 +1,6 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { JwtAuthGuard } from './jwt-auth.guard';
 
 class LoginDto {
   email: string;
@@ -14,5 +15,12 @@ export class AuthController {
   async login(@Body() body: LoginDto) {
     const { email, password } = body;
     return this.authService.login(email, password);
+  }
+
+  /** Returns the current user info decoded from the JWT */
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  me(@Req() req: any) {
+    return { id: req.user.sub, email: req.user.email, role: req.user.role };
   }
 }

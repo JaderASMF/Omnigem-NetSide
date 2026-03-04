@@ -1,5 +1,8 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { AssignmentsService } from './assignments.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
 class CreateAssignmentDto {
   date: string;
@@ -22,16 +25,22 @@ export class AssignmentsController {
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   create(@Body() body: CreateAssignmentDto) {
     return this.svc.createManual(body);
   }
 
   @Post('generate')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   generate(@Body() body: GenerateDto) {
     return this.svc.generate(body.startDate, body.endDate);
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.svc.remove(id);
   }

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { API_BASE } from '../config/api';
 
 export default function RecurringPatternForm({ initial, initialRotation, onSave, onCancel }: { initial?: any; initialRotation?: any[]; onSave: (p:any)=>void; onCancel: ()=>void }) {
   const [workerId, setWorkerId] = useState<number | ''>(initial?.workerId ?? '');
@@ -14,7 +15,7 @@ export default function RecurringPatternForm({ initial, initialRotation, onSave,
   const [scheduleChange, setScheduleChange] = useState<boolean>(false);
   const [scheduleDate, setScheduleDate] = useState<string>('');
   const [workers, setWorkers] = useState<Array<{id:number;name:string}>>([]);
-  const API_BASE = (process.env.NEXT_PUBLIC_API_BASE as string) || 'http://localhost:3001';
+
 
   useEffect(()=>{
     let mounted = true;

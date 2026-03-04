@@ -6,20 +6,21 @@
     "backend"
   ],
   "scripts": {
-    "dev:backend": "npm --prefix backend run start:dev",
-    "dev:frontend": "npm --prefix frontend run dev",
-    "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
-    "build:backend": "npm --prefix backend run build",
-    "build:frontend": "npm --prefix frontend run build",
-    "build": "concurrently \"npm:build:backend\" \"npm:build:frontend\"",
+    "dev:backend": "dotenv -- npm --prefix backend run start:dev",
+    "dev:frontend": "dotenv -- npm --prefix frontend run dev",
+    "dev": "dotenv -- concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "build:backend": "dotenv -- npm --prefix backend run build",
+    "build:frontend": "dotenv -- npm --prefix frontend run build",
+    "build": "dotenv -- concurrently \"npm:build:backend\" \"npm:build:frontend\"",
     "start:all": "npm run build && npm start",
-    "start": "concurrently \"npm --prefix backend run start\" \"npm --prefix frontend run start\"",
-    "prisma:generate": "prisma generate --schema=prisma/schema.prisma && npm run seed",
-    "prisma:migrate": "prisma migrate dev --schema=prisma/schema.prisma && npm run seed",
-    "seed": "npm --prefix backend run seed"
+    "start": "dotenv -- concurrently \"npm --prefix backend run start\" \"npm --prefix frontend run start\"",
+    "prisma:generate": "dotenv -- prisma generate --schema=prisma/schema.prisma && npm run seed",
+    "prisma:migrate": "dotenv -- prisma migrate dev --schema=prisma/schema.prisma && npm run seed",
+    "seed": "dotenv -- npm --prefix backend run seed"
   },
   "devDependencies": {
     "concurrently": "^7.6.0",
+    "dotenv-cli": "^11.0.0",
     "prisma": "6.18.0"
   },
   "dependencies": {
@@ -27,5 +28,9 @@
     "@prisma/client": "^6.18.0",
     "dotenv": "^17.3.1",
     "pg": "^8.19.0"
+  },
+  "overrides": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   }
 }

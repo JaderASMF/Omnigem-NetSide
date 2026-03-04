@@ -4,15 +4,21 @@ import { PALETTE } from '../styles/theme'
 import WorkersContent from './WorkersContent'
 import HolidaysContent from './HolidaysContent'
 import AssignmentsContent from './AssignmentsContent'
+import ReportsContent from './ReportsContent'
 
-export type TabKey = 'dashboard' | 'workers' | 'holidays' | 'assignments';
+export type TabKey = 'dashboard' | 'workers' | 'holidays' | 'assignments' | 'reports';
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: '◻' },
   { key: 'workers', label: 'Trabalhadores', icon: '👷' },
   { key: 'holidays', label: 'Feriados', icon: '🎉' },
   { key: 'assignments', label: 'Atribuições', icon: '📋' },
+  { key: 'reports', label: 'Relatórios', icon: '📊' },
 ];
+
+function isTabKey(value: string): value is TabKey {
+  return TABS.some(t => t.key === value)
+}
 
 export default function DashboardLayout({ initialTab, dashboardContent }: {
   initialTab?: TabKey;
@@ -20,27 +26,43 @@ export default function DashboardLayout({ initialTab, dashboardContent }: {
 }) {
   const router = useRouter()
   const [role, setRole] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'dashboard')
+  const initialFromQuery = typeof router.query.tab === 'string' && isTabKey(router.query.tab)
+    ? router.query.tab
+    : (initialTab ?? 'dashboard')
+  const [activeTab, setActiveTab] = useState<TabKey>(initialFromQuery)
 
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('plantoes_token') : null
-    if (!token) {
+    const storedRole = typeof window !== 'undefined' ? localStorage.getItem('plantoes_role') : null
+    // Allow guest access (empty token) but require that role is set
+    if (token === null && storedRole === null) {
       router.push('/login')
       return
     }
-    setRole(token === 'ADMIN_TOKEN' ? 'admin' : 'guest')
+    setRole(storedRole === 'ADMIN' ? 'admin' : 'guest')
   }, [router])
+
+  useEffect(() => {
+    const queryTab = router.query.tab
+    if (typeof queryTab === 'string' && isTabKey(queryTab) && queryTab !== activeTab) {
+      setActiveTab(queryTab)
+    }
+  }, [router.query.tab, activeTab])
 
   function logout() {
     localStorage.removeItem('plantoes_token')
+    localStorage.removeItem('plantoes_role')
     router.push('/login')
   }
 
+  const isAdmin = role === 'admin';
+
   function renderContent() {
     switch (activeTab) {
-      case 'workers': return <WorkersContent />;
-      case 'holidays': return <HolidaysContent />;
-      case 'assignments': return <AssignmentsContent />;
+      case 'workers': return <WorkersContent readOnly={!isAdmin} />;
+      case 'holidays': return <HolidaysContent readOnly={!isAdmin} />;
+      case 'assignments': return <AssignmentsContent readOnly={!isAdmin} />;
+      case 'reports': return <ReportsContent />;
       default: return dashboardContent ?? null;
     }
   }
@@ -67,7 +89,10 @@ export default function DashboardLayout({ initialTab, dashboardContent }: {
             return (
               <button
                 key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => {
+                  setActiveTab(tab.key)
+                  router.push({ pathname: '/dashboard', query: { tab: tab.key } }, undefined, { shallow: true })
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

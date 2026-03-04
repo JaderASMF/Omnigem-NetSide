@@ -1,22 +1,45 @@
 import { useState } from 'react'
 import { useRouter } from 'next/router'
 import { PALETTE, btnPrimary, btnCancel, inputStyle } from '../styles/theme'
+import { API_BASE } from '../config/api'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
   const router = useRouter()
 
-  function handleLogin(e:any) {
+  async function handleLogin(e:any) {
     e.preventDefault()
     setError('')
-    if (email === 'admin' && password === 'admin123') {
-      localStorage.setItem('plantoes_token', 'ADMIN_TOKEN')
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setError(data?.message || 'Credenciais inválidas')
+        return
+      }
+      const data = await res.json()
+      localStorage.setItem('plantoes_token', data.accessToken)
+      localStorage.setItem('plantoes_role', data.role)
       router.push('/dashboard')
-      return
+    } catch (err) {
+      setError('Erro de conexão com o servidor')
+    } finally {
+      setLoading(false)
     }
-    setError('Credenciais inválidas. Usuário: admin / Senha: admin123')
+  }
+
+  function handleGuestAccess() {
+    localStorage.setItem('plantoes_token', '')
+    localStorage.setItem('plantoes_role', 'GUEST')
+    router.push('/dashboard')
   }
 
   return (
@@ -60,11 +83,8 @@ export default function Login() {
             />
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button type="submit" style={{ ...btnPrimary, flex: 1 }}>Entrar</button>
-            <button type="button" onClick={() => {
-              localStorage.setItem('plantoes_token', 'GUEST_TOKEN')
-              router.push('/dashboard')
-            }} style={{ ...btnCancel, flex: 1, fontSize: 13 }}>Acessar como guest</button>
+            <button type="submit" disabled={loading} style={{ ...btnPrimary, flex: 1, opacity: loading ? 0.6 : 1 }}>{loading ? 'Entrando...' : 'Entrar'}</button>
+            <button type="button" onClick={handleGuestAccess} style={{ ...btnCancel, flex: 1, fontSize: 13 }}>Acessar como convidado</button>
           </div>
         </form>
         {error && <p style={{ color: PALETTE.error, fontSize: 13, marginTop: 12, padding: '8px 10px', background: `${PALETTE.error}18`, borderRadius: 6, border: `1px solid ${PALETTE.error}44` }}>{error}</p>}

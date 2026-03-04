@@ -1,5 +1,8 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, UseGuards } from '@nestjs/common';
 import { RecurringPatternsService } from './recurring-patterns.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
 class CreateRecurringPatternDto {
   workerId: number;
@@ -36,16 +39,22 @@ export class RecurringPatternsController {
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   create(@Body() body: CreateRecurringPatternDto) {
     return this.svc.create(body as any);
   }
 
   @Put(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateRecurringPatternDto) {
     return this.svc.update(id, body as any);
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.svc.remove(id);
   }

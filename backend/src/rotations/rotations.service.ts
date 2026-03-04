@@ -116,7 +116,7 @@ export class RotationsService {
       this.prisma.holiday.findMany(),
     ]);
 
-    const workerMap = new Map(workers.map((w) => [w.id, { name: w.name, color: w.color }]));
+    const workerMap = new Map<number, { name: string; color: string | null }>(workers.map((w) => [w.id, { name: w.name, color: w.color }]));
 
     const isHoliday = (d: Date) =>
       holidays.some((h) => {
@@ -243,5 +243,66 @@ export class RotationsService {
     }
 
     return result;
+  }
+
+  /**
+   * Gera relatório de quantidade de plantões por trabalhador em um período,
+   * opcionalmente filtrando por dias da semana.
+   */
+  async report(
+    startDate: string,
+    endDate: string,
+    weekdays?: number[],
+  ) {
+    // Reutiliza o calendário já calculado (respeita overrides manuais)
+    const calendarData = await this.calendar(startDate, endDate);
+
+    type WorkerStats = {
+      workerId: number;
+      workerName: string;
+      workerColor: string | null;
+      total: number;
+      holidays: number;
+    };
+
+    const statsMap = new Map<number, WorkerStats>();
+
+    for (const [dateKey, day] of Object.entries(calendarData)) {
+      const d = new Date(`${dateKey}T00:00:00Z`);
+      const isHoliday = !!day.holiday;
+
+      // filtra por dias da semana se informados, mas sempre inclui feriados
+      if (weekdays && weekdays.length > 0 && !isHoliday) {
+        if (!weekdays.includes(d.getUTCDay())) continue;
+      }
+
+      for (const entry of day.entries) {
+        if (entry.workerId == null) continue;
+
+        let stat = statsMap.get(entry.workerId);
+        if (!stat) {
+          stat = {
+            workerId: entry.workerId,
+            workerName: entry.workerName ?? 'Sem nome',
+            workerColor: entry.workerColor ?? null,
+            total: 0,
+            holidays: 0,
+          };
+          statsMap.set(entry.workerId, stat);
+        }
+
+        stat.total += 1;
+        if (isHoliday) stat.holidays += 1;
+      }
+    }
+
+    const workers = Array.from(statsMap.values()).sort((a, b) => b.total - a.total);
+
+    return {
+      startDate,
+      endDate,
+      weekdays: weekdays ?? [0, 1, 2, 3, 4, 5, 6],
+      workers,
+    };
   }
 }

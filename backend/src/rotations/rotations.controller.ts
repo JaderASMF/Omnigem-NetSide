@@ -8,8 +8,12 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { RotationsService } from './rotations.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
 class CreateRotationDto {
   name?: string;
@@ -46,17 +50,33 @@ export class RotationsController {
     return this.svc.calendar(startDate, endDate);
   }
 
+  @Get('report')
+  report(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('weekdays') weekdays?: string,
+  ) {
+    const wd = weekdays
+      ? weekdays.split(',').map((n) => parseInt(n, 10))
+      : undefined;
+    return this.svc.report(startDate, endDate, wd);
+  }
+
   @Get(':id')
   get(@Param('id', ParseIntPipe) id: number) {
     return this.svc.get(id);
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   create(@Body() body: CreateRotationDto) {
     return this.svc.create(body);
   }
 
   @Put(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateRotationDto,
@@ -65,6 +85,8 @@ export class RotationsController {
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.svc.remove(id);
   }

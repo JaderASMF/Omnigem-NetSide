@@ -1,16 +1,29 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import * as path from 'path';
+import * as dotenv from 'dotenv';
+
+// Load the root .env so all env vars are available
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  // Enable CORS so the Next.js frontend (localhost:3000) can call the API
+
+  const frontendPort = process.env.FRONTEND_PORT || '9998';
   app.enableCors({
-    origin: ['http://localhost:3000'],
+    origin: [`http://localhost:${frontendPort}`],
     methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     credentials: true,
   });
 
-  await app.listen(3001);
-  console.log('Backend listening on http://localhost:3001');
+  const port = Number(process.env.PORT || 3002);
+  try {
+    await app.listen(port);
+    console.log(`Backend listening on http://localhost:${port}`);
+  } catch (err) {
+    console.error(`Failed to listen on port ${port}:`, err);
+    process.exit(1);
+  }
 }
 bootstrap();

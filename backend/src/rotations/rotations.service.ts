@@ -55,6 +55,7 @@ export class RotationsService {
     workerIds: number[];
     startDate: string;
     notifyUpcoming?: boolean;
+    endDate?: string;
   }) {
     return this.prisma.rotation.create({
       data: {
@@ -62,6 +63,7 @@ export class RotationsService {
         weekdays: data.weekdays,
         workerIds: data.workerIds,
         startDate: toUTCMidnight(data.startDate),
+        endDate: data.endDate ? toUTCMidnight(data.endDate) : null,
         notifyUpcoming: data.notifyUpcoming ?? false,
       },
     });
@@ -74,6 +76,7 @@ export class RotationsService {
       weekdays: number[];
       workerIds: number[];
       startDate: string;
+      endDate: string | null;
       notifyUpcoming: boolean;
     }>,
   ) {
@@ -83,6 +86,8 @@ export class RotationsService {
     if (data.workerIds !== undefined) payload.workerIds = data.workerIds;
     if (data.startDate !== undefined)
       payload.startDate = toUTCMidnight(data.startDate);
+    if (data.endDate !== undefined)
+      payload.endDate = data.endDate ? toUTCMidnight(data.endDate) : null;
     if (data.notifyUpcoming !== undefined)
       payload.notifyUpcoming = data.notifyUpcoming;
     return this.prisma.rotation.update({ where: { id }, data: payload });
@@ -184,6 +189,8 @@ export class RotationsService {
         if (!rot.weekdays.includes(weekday)) continue;
         const rotStart = new Date(rot.startDate);
         if (d < rotStart) continue;
+        // Se o rodízio tem endDate, não considerar após essa data
+        if (rot.endDate && d > new Date(rot.endDate)) continue;
         if (!chosen || rotStart > new Date(chosen.startDate)) {
           chosen = rot;
         }

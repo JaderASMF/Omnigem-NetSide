@@ -16,6 +16,7 @@ class CreateRotationDto {
   weekdays: number[];
   workerIds: number[];
   startDate: string;
+  endDate?: string;
   notifyUpcoming?: boolean;
 }
 
@@ -24,6 +25,7 @@ class UpdateRotationDto {
   weekdays?: number[];
   workerIds?: number[];
   startDate?: string;
+  endDate?: string | null;
   notifyUpcoming?: boolean;
 }
 

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -21,7 +21,21 @@ export class WorkersService {
     return this.prisma.worker.update({ where: { id }, data });
   }
 
-  remove(id: number) {
+  async remove(id: number, removeAssignments = false) {
+    const refs = await this.prisma.recurringPattern.count({ where: { workerId: id } });
+    if (refs > 0 && !removeAssignments) {
+      throw new BadRequestException('Não é possível apagar: existem padrões recorrentes referenciando este trabalhador. Remova ou reatribua-os primeiro.');
+    }
+
+    if (removeAssignments) {
+      // delete assignments referencing this worker, delete recurring patterns, then delete worker
+      return this.prisma.$transaction(async (tx) => {
+        await tx.assignment.deleteMany({ where: { workerId: id } });
+        await tx.recurringPattern.deleteMany({ where: { workerId: id } });
+        return tx.worker.delete({ where: { id } });
+      });
+    }
+
     return this.prisma.worker.delete({ where: { id } });
   }
 }

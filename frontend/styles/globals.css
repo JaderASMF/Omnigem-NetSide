@@ -1,9 +1,12 @@
-html,body,#__next{height:100%}
-body{margin:0}
+html,body,#__next{height:100%;margin:0}
+body{margin:0;background:#1A1D21;color:#E6EAF0;font-family:system-ui,-apple-system,sans-serif}
+
+*,*::before,*::after{box-sizing:border-box}
 
 /* ── Global button hover effects ── */
 button {
   transition: all 0.2s ease;
+  font-family: inherit;
 }
 button:hover:not(:disabled) {
   filter: brightness(1.2);
@@ -23,16 +26,25 @@ button:disabled {
 /* ── Links e nav hover ── */
 a {
   transition: color 0.2s ease, opacity 0.2s ease;
+  color: #5C7CFA;
+  text-decoration: none;
 }
 a:hover {
   opacity: 0.85;
 }
 
-/* ── Select / input focus ── */
-select, input[type="date"], input[type="text"], input[type="password"], input[type="email"] {
+/* ── Select / input / textarea global ── */
+select, input, textarea {
+  font-family: inherit;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-select:focus, input:focus {
+select:focus, input:focus, textarea:focus {
   outline: none;
   box-shadow: 0 0 0 2px rgba(92, 124, 250, 0.4);
 }
+
+/* ── Scrollbar dark ── */
+::-webkit-scrollbar { width: 8px; height: 8px }
+::-webkit-scrollbar-track { background: #20242A }
+::-webkit-scrollbar-thumb { background: #3A4250; border-radius: 4px }
+::-webkit-scrollbar-thumb:hover { background: #4A5568 }

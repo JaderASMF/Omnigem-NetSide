@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { WorkersService } from './workers.service';
 
 class CreateWorkerDto {
@@ -39,7 +39,8 @@ export class WorkersController {
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.svc.remove(id);
+  remove(@Param('id', ParseIntPipe) id: number, @Query('removeAssignments') removeAssignments?: string) {
+    const flag = removeAssignments === '1' || removeAssignments === 'true' || removeAssignments === 'yes'
+    return this.svc.remove(id, flag);
   }
 }

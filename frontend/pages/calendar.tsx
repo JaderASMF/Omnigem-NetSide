@@ -36,14 +36,49 @@ function endOfMonth(d: Date) { return new Date(Date.UTC(d.getUTCFullYear(), d.ge
 function addDays(d: Date, n: number) { const c = new Date(d); c.setUTCDate(c.getUTCDate() + n); return c; }
 function toISO(d: Date) { return d.toISOString().slice(0, 10); }
 
+// mesmos helpers de semana usados no backend para calcular o trabalhador do rodízio
+function toUTCMidnightRotation(value: Date | string): Date {
+  const s = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return new Date(`${s}T00:00:00Z`);
+  }
+  return new Date(s);
+}
+
+function weekStartUTC(d: Date): Date {
+  const copy = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  copy.setUTCDate(copy.getUTCDate() - copy.getUTCDay());
+  return copy;
+}
+
 const WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 /* ── tipos ── */
 type Worker = { id: number; name: string };
-type Rotation = { id: number; name: string | null; weekdays: number[]; workerIds: number[]; startDate: string; notifyUpcoming?: boolean };
+type Rotation = { id: number; name: string | null; weekdays: number[]; workerIds: number[]; startDate: string; endDate?: string | null; notifyUpcoming?: boolean };
 type Holiday = { id: number; name: string | null; recurring: boolean };
 type CalendarEntryItem = { workerId: number | null; workerName: string | null; workerColor?: string | null; source: string; rotationId?: number; rotationName?: string; note?: string; notifyUpcoming?: boolean };
 type DayData = { entries: CalendarEntryItem[]; holiday?: Holiday };
+
+// Encontra qual rodízio está ativo para uma determinada data,
+// seguindo a mesma lógica do backend (último startDate que vale para o dia).
+function findRotationForDate(date: Date, rotations: Rotation[]): Rotation | null {
+  const weekday = date.getUTCDay();
+  let chosen: Rotation | null = null;
+
+  for (const rot of rotations) {
+    if (!rot.weekdays.includes(weekday)) continue;
+    const rotStart = new Date(rot.startDate);
+    if (date < rotStart) continue;
+    // Se o rodízio tem endDate, não considerar após essa data
+    if (rot.endDate && date > new Date(rot.endDate)) continue;
+    if (!chosen || rotStart > new Date(chosen.startDate)) {
+      chosen = rot;
+    }
+  }
+
+  return chosen;
+}
 
 export default function CalendarPage() {
   const [viewDate, setViewDate] = useState(() => {
@@ -194,6 +229,11 @@ export default function CalendarPage() {
                   <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>
                     Ordem: {rot.workerIds.map(id => workers.find(w => w.id === id)?.name ?? `#${id}`).join(' → ')}
                   </div>
+                  {rot.endDate && (
+                    <div style={{ fontSize: 11, color: PALETTE.warning, marginTop: 4 }}>
+                      Finalizado em: {new Date(rot.endDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                    </div>
+                  )}
                   <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
                     <button onClick={() => setRotModal(rot)} style={btnSmallBlueSidebar}>Editar</button>
                     <button onClick={async () => { if (confirm('Apagar este rodízio?')) { await fetch(`${API}/rotations/${rot.id}`, { method: 'DELETE' }); await loadRotations(); await loadCalendar(viewDate); } }} style={btnSmallRedSidebar}>Apagar</button>
@@ -276,13 +316,19 @@ export default function CalendarPage() {
                 const isCurrentMonth = cell.getUTCMonth() === viewDate.getUTCMonth();
                 const isToday = iso === toISO(new Date());
 
-                // Verifica se algum entry do rodízio com notifyUpcoming está a ≤7 dias de hoje
                 const todayDate = new Date();
                 const cellDate = new Date(cell);
                 const diffMs = cellDate.getTime() - todayDate.getTime();
                 const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-                const isUpcomingSoon = entries.some(e => e.source === 'ROTATION' && e.notifyUpcoming) && diffDays >= 0 && diffDays <= 7 && !isToday;
+
                 const isHoliday = !!holiday;
+                const rotationForDay = findRotationForDate(cell, rotations);
+                const hasNotifyRotation = !isHoliday && (
+                  entries.some(e => e.source === 'ROTATION' && e.notifyUpcoming) ||
+                  !!rotationForDay?.notifyUpcoming
+                );
+                const isUpcomingSoon = hasNotifyRotation && diffDays >= 0 && diffDays <= 7 && !isToday;
+
                 const hasHighlight = isToday || isUpcomingSoon || isHoliday;
                 const headerBg = isToday ? PALETTE.success : isUpcomingSoon ? PALETTE.error : isHoliday ? PALETTE.warning : 'transparent';
 
@@ -299,11 +345,11 @@ export default function CalendarPage() {
                     }}
                   >
                       <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', padding: hasHighlight ? '6px 8px' : undefined, background: headerBg, borderTopLeftRadius: hasHighlight ? 6 : undefined, borderTopRightRadius: hasHighlight ? 6 : undefined, color: hasHighlight ? '#fff' : undefined }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', padding: hasHighlight ? '6px 8px' : undefined, background: headerBg, borderTopLeftRadius: hasHighlight ? 6 : undefined, borderTopRightRadius: hasHighlight ? 6 : undefined, color: hasHighlight ? '#fff' : undefined, flexGrow: hasHighlight ? 1 : 0 }}>
                           {holiday && (
                             <span title={holiday.name ?? 'Feriado'} style={{ position: 'absolute', left: 2, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#FFF' }}>★</span>
                           )}
-                          <span style={{ display: 'block', margin: '0 auto', fontSize: isToday ? 16 : 20, fontWeight: hasHighlight ? 700 : 600, color: hasHighlight ? '#fff' : (isCurrentMonth ? PALETTE.textPrimary : PALETTE.textDisabled) }}>
+                          <span style={{ display: 'block', margin: '0 auto', fontSize: 25, fontWeight: hasHighlight ? 700 : 600, color: hasHighlight ? '#fff' : (isCurrentMonth ? PALETTE.textPrimary : PALETTE.textDisabled) }}>
                             {cell.getUTCDate()}
                           </span>
                           <button
@@ -314,19 +360,19 @@ export default function CalendarPage() {
                               right: 6,
                               top: '50%',
                               transform: 'translateY(-50%)',
-                              fontSize: 12,
                               lineHeight: 1,
-                              padding: '4px 6px',
+                              padding: '3px 5px',
+                              fontSize: 11,
                               cursor: 'pointer',
                               background: hasHighlight ? PALETTE.primary : PALETTE.hoverBg,
                               border: hasHighlight ? 'none' : `1px solid ${PALETTE.plusBtnBorder}`,
-                              borderRadius: 6,
+                              borderRadius: 5,
                               color: hasHighlight ? '#fff' : PALETTE.primary,
-                              fontWeight: 700,
+                              fontWeight: 800,
                             }}
                           >+</button>
                         </div>
-                      <div style={{ marginTop: 4, flexGrow: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 2 }}>
+                      <div style={{ paddingTop: 4, marginTop: 'auto', flexGrow: 0, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column-reverse', gap: 2 }}>
                         {entries.length === 0 && holiday ? (
                           <div style={{
                             padding: '2px 6px',
@@ -350,7 +396,7 @@ export default function CalendarPage() {
                             overflow: 'hidden',
                             flexShrink: 0,
                           }}>
-                            <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: PALETTE.textPrimary, fontSize: 11 }}>
+                            <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: PALETTE.textPrimary, fontSize: 14 }}>
                               {entry.source === 'MANUAL' && (
                                 <span title="Atribuição manual" style={{ color: PALETTE.success, marginRight: 6, fontSize: 12 }}>●</span>
                               )}
@@ -359,7 +405,7 @@ export default function CalendarPage() {
                           </div>
                         ))}
                       </div>
-                      <div style={{ marginTop: 'auto', paddingTop: 2, display: 'flex', gap: 4 }}>
+                      <div style={{ marginTop: 2, paddingTop: 2, display: 'flex', gap: 4 }}>
                         {entries.length > 0 ? (
                           hasRotation && !hasManual ? (
                             <>
@@ -538,8 +584,8 @@ function DayInfoPanel({ date, dayData, workers, rotations, onClose }: {
         <div>
           <div style={{ fontWeight: 700, fontSize: 16, color: PALETTE.textPrimary }}>{dayOfWeek}</div>
           <div style={{ fontSize: 13, color: PALETTE.textSecondary, marginTop: 2 }}>{formattedDate}</div>
-        </div>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: PALETTE.textSecondary, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 4px' }}>✕</button>
+                </div>
+                <button onClick={onClose} style={{ background: 'none', border: 'none', color: PALETTE.textSecondary, cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}>✕</button>
       </div>
 
       <div style={{ height: 1, background: PALETTE.border }} />
@@ -691,7 +737,7 @@ function RotationModal({ rotation, workers, onClose, onSaved, scheduleFrom }: {
       setScheduleChange(false);
       setScheduleDate(scheduleFrom ?? '');
     }
-  }, [rotation, scheduleFrom]);
+  }, [rotationStarted, scheduleFrom, todayISO]);
 
   const save = async () => {
     if (weekdays.length === 0) return alert('Selecione ao menos um dia da semana.');
@@ -709,10 +755,33 @@ function RotationModal({ rotation, workers, onClose, onSaved, scheduleFrom }: {
             return;
           }
 
+          // Ajusta a nova lista para não "recomeçar do zero":
+          // usa o mesmo deslocamento de semanas do rodízio antigo e
+          // rotaciona a nova lista para alinhar a sequência a partir dessa semana.
+          let effectiveWorkerIds = workerIds;
+          try {
+            if (rotation.startDate && workerIds.length > 0) {
+              const startOld = toUTCMidnightRotation(rotation.startDate);
+              const date = new Date(scheduleDate + 'T00:00:00Z');
+              const dateWeekStart = weekStartUTC(date);
+              const startWeekStart = weekStartUTC(startOld);
+              const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+              const weeksSince = Math.round(
+                (dateWeekStart.getTime() - startWeekStart.getTime()) / msPerWeek,
+              );
+              const n = workerIds.length;
+              const k = ((weeksSince % n) + n) % n;
+              effectiveWorkerIds = [
+                ...workerIds.slice(k),
+                ...workerIds.slice(0, k),
+              ];
+            }
+          } catch {}
+
           const newBody = {
             name: name || rotation.name || null,
             weekdays,
-            workerIds,
+            workerIds: effectiveWorkerIds,
             startDate: scheduleDate,
             notifyUpcoming,
           };
@@ -744,6 +813,22 @@ function RotationModal({ rotation, workers, onClose, onSaved, scheduleFrom }: {
               body: JSON.stringify(newBody),
             });
           }
+
+          // Marca o rodízio antigo como finalizado no nome e define endDate
+          try {
+            const baseName = rotation.name || name || `Rodízio #${rotation.id}`;
+            const hasSuffix = baseName.toLowerCase().includes('-finalizado');
+            const finalName = hasSuffix ? baseName : `${baseName} -finalizado`;
+            // endDate = dia anterior ao início do novo rodízio
+            const endDateObj = new Date(scheduleDate + 'T00:00:00Z');
+            endDateObj.setUTCDate(endDateObj.getUTCDate() - 1);
+            const endDateISO = endDateObj.toISOString().slice(0, 10);
+            await fetch(`${API}/rotations/${rotation.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: finalName, endDate: endDateISO }),
+            });
+          } catch {}
         } else {
           // Edição direta (rodízio ainda não começou)
           await fetch(`${API}/rotations/${rotation.id}`, {
@@ -786,7 +871,7 @@ function RotationModal({ rotation, workers, onClose, onSaved, scheduleFrom }: {
               onClick={() => toggleWeekday(i)}
               type="button"
               style={{
-                padding: '6px 10px',
+                padding: '4px 8px',
                 borderRadius: 6,
                 border: weekdays.includes(i) ? `2px solid ${PALETTE.primary}` : `1px solid ${PALETTE.border}`,
                 background: weekdays.includes(i) ? PALETTE.hoverBg : PALETTE.backgroundSecondary,
@@ -902,7 +987,7 @@ const cellStyle: React.CSSProperties = {
   border: `1px solid ${PALETTE.border}`,
   padding: 4,
   overflow: 'hidden',
-  height: 115,
+  height: 125,
 };
 
 /* Azul – criar / editar */
@@ -910,7 +995,7 @@ const btnPrimary: React.CSSProperties = {
   background: PALETTE.primary,
   color: '#fff',
   border: 'none',
-  padding: '8px 16px',
+  padding: '6px 14px',
   borderRadius: 6,
   cursor: 'pointer',
   fontWeight: 600,
@@ -921,7 +1006,7 @@ const btnConfirm: React.CSSProperties = {
   background: PALETTE.success,
   color: '#fff',
   border: 'none',
-  padding: '8px 16px',
+  padding: '6px 14px',
   borderRadius: 6,
   cursor: 'pointer',
   fontWeight: 600,
@@ -932,7 +1017,7 @@ const btnCancel: React.CSSProperties = {
   background: 'transparent',
   color: PALETTE.error,
   border: `1px solid ${PALETTE.error}`,
-  padding: '8px 16px',
+  padding: '6px 14px',
   borderRadius: 6,
   cursor: 'pointer',
   fontWeight: 600,
@@ -943,7 +1028,7 @@ const btnDanger: React.CSSProperties = {
   background: PALETTE.error,
   color: '#fff',
   border: 'none',
-  padding: '8px 16px',
+  padding: '6px 14px',
   borderRadius: 6,
   cursor: 'pointer',
   fontWeight: 600,
@@ -951,43 +1036,44 @@ const btnDanger: React.CSSProperties = {
 
 /* Botão pequeno neutro (↑ ↓ etc.) */
 const btnSmall: React.CSSProperties = {
-  fontSize: 12,
+  fontSize: 11,
   padding: '2px 8px',
   cursor: 'pointer',
   background: PALETTE.hoverBg,
   color: PALETTE.textPrimary,
   border: `1px solid ${PALETTE.border}`,
-  borderRadius: 4,
+  borderRadius: 6,
+  fontWeight: 600,
 };
 
 /* Botão pequeno azul – editar / criar (células) */
 const btnSmallBlue: React.CSSProperties = {
-  fontSize: 10,
-  padding: '2px 6px',
+  fontSize: 11,
+  padding: '4px 8px',
   cursor: 'pointer',
   background: PALETTE.primary,
   color: '#fff',
   border: 'none',
-  borderRadius: 4,
-  fontWeight: 500,
+  borderRadius: 6,
+  fontWeight: 700,
 };
 
 /* Botão pequeno vermelho – excluir (células) */
 const btnSmallRed: React.CSSProperties = {
-  fontSize: 10,
-  padding: '2px 6px',
+  fontSize: 11,
+  padding: '4px 8px',
   cursor: 'pointer',
   background: PALETTE.error,
   color: '#fff',
   border: 'none',
-  borderRadius: 4,
-  fontWeight: 500,
+  borderRadius: 6,
+  fontWeight: 700,
 };
 
 /* Botão pequeno azul – editar sidebar */
 const btnSmallBlueSidebar: React.CSSProperties = {
-  fontSize: 12,
-  padding: '2px 8px',
+  fontSize: 10,
+  padding: '0px 6px',
   cursor: 'pointer',
   background: PALETTE.primary,
   color: '#fff',
@@ -998,8 +1084,8 @@ const btnSmallBlueSidebar: React.CSSProperties = {
 
 /* Botão pequeno vermelho – apagar sidebar */
 const btnSmallRedSidebar: React.CSSProperties = {
-  fontSize: 12,
-  padding: '2px 8px',
+  fontSize: 10,
+  padding: '0px 6px',
   cursor: 'pointer',
   background: PALETTE.error,
   color: '#fff',
@@ -1009,7 +1095,7 @@ const btnSmallRedSidebar: React.CSSProperties = {
 };
 
 const btnNav: React.CSSProperties = {
-  padding: '6px 14px',
+  padding: '4px 12px',
   cursor: 'pointer',
   border: `1px solid ${PALETTE.border}`,
   borderRadius: 6,

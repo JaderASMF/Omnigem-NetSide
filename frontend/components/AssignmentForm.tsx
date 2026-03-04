@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PALETTE, btnPrimary, inputStyle, selectStyle, cardStyle } from '../styles/theme';
 
 export default function AssignmentForm({ initial, onSave }: { initial?: any; onSave: (p:any)=>void }) {
   const [date, setDate] = useState('');
@@ -24,26 +25,33 @@ export default function AssignmentForm({ initial, onSave }: { initial?: any; onS
   }, [API_BASE]);
 
   const submit = ()=>{
-    if(!date) return alert('Date required');
+    if(!date) return alert('Data obrigatória');
     onSave({ date, workerId: workerId === '' ? null : Number(workerId), note: note||null });
     setDate(''); setWorkerId(''); setNote('');
   };
 
   return (
-    <div>
-      <h2>New Assignment</h2>
-      <div style={{ display: 'grid', gap: 8 }}>
-        <label>Date <input type="date" value={date} onChange={e=>setDate(e.target.value)} /></label>
-        <label>Worker
-          <select value={workerId as any} onChange={e=>setWorkerId(e.target.value?Number(e.target.value):'')}>
-            <option value="">-- none --</option>
+    <div style={cardStyle}>
+      <h3 style={{ margin: '0 0 16px 0', fontSize: 16, color: PALETTE.textPrimary }}>Nova Atribuição</h3>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div>
+          <label style={{ display: 'block', fontWeight: 600, fontSize: 13, color: PALETTE.textSecondary, marginBottom: 4 }}>Data</label>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inputStyle} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontWeight: 600, fontSize: 13, color: PALETTE.textSecondary, marginBottom: 4 }}>Trabalhador</label>
+          <select value={workerId as any} onChange={e=>setWorkerId(e.target.value?Number(e.target.value):'')} style={selectStyle}>
+            <option value="">— nenhum —</option>
             {workers.map(w => (
               <option key={w.id} value={w.id}>{w.name} ({w.id})</option>
             ))}
           </select>
-        </label>
-        <label>Note <input value={note} onChange={e=>setNote(e.target.value)} /></label>
-        <div><button onClick={submit}>Create</button></div>
+        </div>
+        <div>
+          <label style={{ display: 'block', fontWeight: 600, fontSize: 13, color: PALETTE.textSecondary, marginBottom: 4 }}>Nota (opcional)</label>
+          <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Adicionar nota..." style={inputStyle} />
+        </div>
+        <button onClick={submit} style={btnPrimary}>Criar</button>
       </div>
     </div>
   );

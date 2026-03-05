@@ -376,8 +376,7 @@ export default function CalendarPage() {
                             style={{
                               position: 'absolute',
                               right: 6,
-                              top: '50%',
-                              transform: 'translateY(-50%)',
+                              top: 4,
                               lineHeight: 1,
                               padding: '3px 5px',
                               fontSize: 11,
@@ -387,7 +386,7 @@ export default function CalendarPage() {
                               borderRadius: 5,
                               color: hasHighlight ? '#fff' : PALETTE.primary,
                               fontWeight: 800,
-                              display: isAdmin ? undefined : 'none',
+                              display: isAdmin && !hasRotation ? undefined : 'none',
                             }}
                           >+</button>
                         </div>

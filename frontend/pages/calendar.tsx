@@ -116,6 +116,9 @@ export default function CalendarPage() {
   const [rotModal, setRotModal] = useState<Rotation | 'new' | null>(null);
   const [rotScheduleFrom, setRotScheduleFrom] = useState<string | null>(null);
 
+  /* modal de informação de feriado */
+  const [holidayModalData, setHolidayModalData] = useState<{ name: string | null; date: string; recurring: boolean } | null>(null);
+
   /* ── carregamento ── */
   const loadWorkers = useCallback(async () => {
     try { const r = await fetch(`${API}/workers`); setWorkers(await r.json()); } catch { setWorkers([]); }
@@ -353,75 +356,94 @@ export default function CalendarPage() {
                 return (
                   <td key={ci} style={{
                         ...cellStyle,
-                        background: isToday ? PALETTE.todayBg : isCurrentMonth ? PALETTE.cardBg : PALETTE.notCurrentBg,
+                        background: isToday
+                          ? PALETTE.todayBg
+                          : isHoliday && isCurrentMonth
+                            ? 'linear-gradient(135deg, #b8860b22 0%, #daa52044 50%, #b8860b22 100%)'
+                            : isCurrentMonth ? PALETTE.cardBg : PALETTE.notCurrentBg,
+                        border: isHoliday && isCurrentMonth ? '1px solid #daa520' : undefined,
+                        boxShadow: isHoliday && isCurrentMonth ? '0 0 8px #daa52033, inset 0 0 12px #daa52011' : undefined,
+                        borderRadius: isHoliday && isCurrentMonth ? 8 : undefined,
                         outline: selectedDay === iso ? `2px solid ${PALETTE.primary}` : undefined,
                         cursor: 'pointer',
                     }}
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest('button')) return;
+                      if ((e.target as HTMLElement).closest('[data-holiday-star]')) return;
                       setSelectedDay(prev => prev === iso ? null : iso);
                     }}
                   >
                       <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', padding: hasHighlight ? '6px 8px' : undefined, background: headerBg, borderTopLeftRadius: hasHighlight ? 6 : undefined, borderTopRightRadius: hasHighlight ? 6 : undefined, color: hasHighlight ? '#fff' : undefined, flexGrow: hasHighlight ? 1 : 0 }}>
-                          {holiday && (
-                            <span title={holiday.name ?? 'Feriado'} style={{ position: 'absolute', left: 2, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#FFF' }}>★</span>
-                          )}
-                          <span style={{ display: 'block', margin: '0 auto', fontSize: 25, fontWeight: hasHighlight ? 700 : 600, color: hasHighlight ? '#fff' : (isCurrentMonth ? PALETTE.textPrimary : PALETTE.textDisabled) }}>
+                        {/* Star badge for holidays */}
+                        {holiday && isCurrentMonth && (
+                          <span
+                            data-holiday-star
+                            onClick={(e) => { e.stopPropagation(); setHolidayModalData({ name: holiday.name, date: iso, recurring: holiday.recurring }) }}
+                            title={holiday.name ?? 'Feriado'}
+                            style={{
+                              position: 'absolute', right: 4, top: 3, zIndex: 3,
+                              fontSize: 15, cursor: 'pointer', lineHeight: 1,
+                              filter: 'drop-shadow(0 1px 3px rgba(218,165,32,0.6))',
+                              transition: 'transform 0.2s ease, filter 0.2s ease',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.35) rotate(15deg)'; e.currentTarget.style.filter = 'drop-shadow(0 2px 6px rgba(218,165,32,0.9))' }}
+                            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.filter = 'drop-shadow(0 1px 3px rgba(218,165,32,0.6))' }}
+                          >⭐</span>
+                        )}
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: hasHighlight ? '6px 8px' : undefined, background: isHoliday ? 'transparent' : headerBg, borderTopLeftRadius: hasHighlight ? 6 : undefined, borderTopRightRadius: hasHighlight ? 6 : undefined, color: hasHighlight && !isHoliday ? '#fff' : undefined, flexGrow: hasHighlight ? 1 : 0 }}>
+                          <span style={{ display: 'block', fontSize: 25, fontWeight: hasHighlight ? 700 : 600, color: isHoliday && isCurrentMonth ? '#daa520' : (hasHighlight ? '#fff' : (isCurrentMonth ? PALETTE.textPrimary : PALETTE.textDisabled)) }}>
                             {cell.getUTCDate()}
                           </span>
-                          <button
-                            title="Novo rodízio a partir deste dia"
-                            onClick={() => { setRotModal('new'); setRotScheduleFrom(iso); }}
-                            style={{
-                              position: 'absolute',
-                              right: 6,
-                              top: 4,
-                              lineHeight: 1,
-                              padding: '3px 5px',
-                              fontSize: 11,
-                              cursor: 'pointer',
-                              background: hasHighlight ? PALETTE.primary : PALETTE.hoverBg,
-                              border: hasHighlight ? 'none' : `1px solid ${PALETTE.plusBtnBorder}`,
-                              borderRadius: 5,
-                              color: hasHighlight ? '#fff' : PALETTE.primary,
-                              fontWeight: 800,
-                              display: isAdmin && !hasRotation ? undefined : 'none',
-                            }}
-                          >+</button>
+                          {/* + button removed per request */}
                         </div>
-                      <div style={{ paddingTop: 4, marginTop: 'auto', flexGrow: 0, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column-reverse', gap: 2 }}>
-                        {entries.length === 0 && holiday ? (
-                          <div style={{
-                            padding: '2px 6px',
-                            borderRadius: 4,
-                            fontSize: 11,
-                            background: `${PALETTE.warning}22`,
-                            borderLeft: `3px solid ${PALETTE.warning}`,
-                            overflow: 'hidden',
-                          }}>
-                            <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: PALETTE.warning }}>{holiday.name ?? 'Feriado'}</div>
-                          </div>
-                        ) : entries.map((entry, ei) => (
-                          <div key={ei} style={{
-                            padding: '2px 6px',
-                            borderRadius: 4,
-                            fontSize: 11,
-                            background: entry.workerColor
-                              ? `${entry.workerColor}22`
-                              : entry.source === 'MANUAL' ? `${PALETTE.success}22` : `${PALETTE.info}22`,
-                            borderLeft: entry.workerColor ? `3px solid ${entry.workerColor}` : undefined,
-                            overflow: 'hidden',
-                            flexShrink: 0,
-                          }}>
-                            <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: PALETTE.textPrimary, fontSize: 14 }}>
-                              {entry.source === 'MANUAL' && (
-                                <span title="Atribuição manual" style={{ color: PALETTE.success, marginRight: 6, fontSize: 12 }}>●</span>
-                              )}
-                              {entry.workerName ?? entry.workerId ?? '—'}
-                            </div>
-                          </div>
-                        ))}
+                      {holiday && isCurrentMonth && (
+                        <div style={{
+                          padding: '1px 4px', margin: '1px 2px 0',
+                          borderRadius: 3, textAlign: 'center',
+                          background: '#daa52033',
+                          overflow: 'hidden',
+                        }}>
+                        <div title={holiday.name ?? 'Feriado'} style={{
+                          fontWeight: 700,
+                          fontSize: 11,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          color: '#fff',
+                          paddingBottom: '1px',
+                          letterSpacing: '0.03em',
+                          textTransform: 'uppercase',
+                        }}>{holiday.name ?? 'Feriado'}</div>
+                        </div>
+                      )}
+                      <div style={{ paddingTop: 2, marginTop: 'auto', flexGrow: 0, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column-reverse', gap: 2 }}>
+                        {entries.length === 0 ? null : (() => {
+                          const first = entries[0];
+                          const extra = entries.length - 1;
+                          return (
+                              <div style={{
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                fontSize: 11,
+                                background: first.workerColor
+                                  ? `${first.workerColor}22`
+                                  : first.source === 'MANUAL' ? `${PALETTE.success}22` : `${PALETTE.info}22`,
+                                borderLeft: first.workerColor ? `3px solid ${first.workerColor}` : undefined,
+                                overflow: 'hidden',
+                                flexShrink: 0,
+                              }}>
+                                <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: PALETTE.textPrimary, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  {first.source === 'MANUAL' && (
+                                    <span title="Atribuição manual" style={{ color: PALETTE.success, fontSize: 12, flexShrink: 0 }}>●</span>
+                                  )}
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{first.workerName ?? first.workerId ?? '—'}</span>
+                                  {extra > 0 && (
+                                    <span style={{ fontSize: 11, color: PALETTE.primary, fontWeight: 700, marginLeft: '8px', marginRight: 2, flexShrink: 0, textAlign: 'right' }}>+{extra}</span>
+                                  )}
+                                </div>
+                              </div>
+                          );
+                        })()}
                       </div>
                       <div style={{ marginTop: 2, paddingTop: 2, display: 'flex', gap: 4 }}>
                         {isAdmin && (
@@ -504,6 +526,8 @@ export default function CalendarPage() {
             dayData={calendar[selectedDay] ?? null}
             workers={workers}
             rotations={rotations}
+            isAdmin={isAdmin}
+            onCreateRotation={(d) => { setRotModal('new'); setRotScheduleFrom(d); }}
             onClose={() => setSelectedDay(null)}
           />
         )}
@@ -555,6 +579,48 @@ export default function CalendarPage() {
         </Modal>
       )}
 
+      {/* Modal de info feriado */}
+      {holidayModalData && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+          onClick={e => { if (e.target === e.currentTarget) setHolidayModalData(null) }}>
+          <div style={{
+            width: 380, maxWidth: '90%', background: PALETTE.cardBg, borderRadius: 12, padding: 0,
+            boxShadow: '0 12px 48px rgba(0,0,0,0.5)', overflow: 'hidden',
+            border: '1px solid #daa52066',
+          }}>
+            {/* Golden header */}
+            <div style={{
+              background: 'linear-gradient(135deg, #b8860b 0%, #daa520 50%, #b8860b 100%)',
+              padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 22 }}>⭐</span>
+                <h3 style={{ margin: 0, fontSize: 17, color: '#fff', fontWeight: 700 }}>Feriado</h3>
+              </div>
+              <button onClick={() => setHolidayModalData(null)} style={{
+                background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6,
+                color: '#fff', cursor: 'pointer', padding: '4px 10px', fontSize: 13, fontWeight: 600,
+              }}>✕</button>
+            </div>
+            {/* Content */}
+            <div style={{ padding: '16px 20px' }}>
+              <div style={{
+                padding: '14px 16px', background: '#daa52012',
+                border: '1px solid #daa52033', borderRadius: 8,
+              }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#daa520' }}>{holidayModalData.name ?? 'Feriado'}</div>
+                <div style={{ fontSize: 13, color: PALETTE.textSecondary, marginTop: 6 }}>
+                  📅 {new Date(holidayModalData.date + 'T00:00:00Z').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })}
+                </div>
+                {holidayModalData.recurring && (
+                  <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 4, fontStyle: 'italic' }}>Recorrente (anual)</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de rodízio */}
       {rotModal !== null && (
         <RotationModal
@@ -572,12 +638,14 @@ export default function CalendarPage() {
 /* ══════════════════════════════════════════════════════
    Componente: Painel de informações do dia
    ══════════════════════════════════════════════════════ */
-function DayInfoPanel({ date, dayData, workers, rotations, onClose }: {
+function DayInfoPanel({ date, dayData, workers, rotations, onClose, isAdmin, onCreateRotation }: {
   date: string;
   dayData: DayData | null;
   workers: Worker[];
   rotations: Rotation[];
   onClose: () => void;
+  isAdmin?: boolean;
+  onCreateRotation?: (date: string) => void;
 }) {
   const d = new Date(date + 'T00:00:00Z');
   const dayOfWeek = WEEKDAY_LABELS[d.getUTCDay()];
@@ -602,12 +670,14 @@ function DayInfoPanel({ date, dayData, workers, rotations, onClose }: {
       gap: 12,
     }}>
       {/* Cabeçalho */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
         <div>
           <div style={{ fontWeight: 700, fontSize: 16, color: PALETTE.textPrimary }}>{dayOfWeek}</div>
           <div style={{ fontSize: 13, color: PALETTE.textSecondary, marginTop: 2 }}>{formattedDate}</div>
                 </div>
-                <button onClick={onClose} style={{ background: 'none', border: 'none', color: PALETTE.textSecondary, cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}>✕</button>
+                <div>
+                  <button onClick={onClose} style={{ background: 'none', border: 'none', color: PALETTE.textSecondary, cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}>✕</button>
+                </div>
       </div>
 
       <div style={{ height: 1, background: PALETTE.border }} />
@@ -696,6 +766,12 @@ function DayInfoPanel({ date, dayData, workers, rotations, onClose }: {
           ) : null}
         </div>
       </div>
+      {/* Footer com ações */}
+      {isAdmin && (
+        <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={() => onCreateRotation?.(date)} style={btnPrimary}>+ Rodízio</button>
+        </div>
+      )}
     </aside>
   );
 }

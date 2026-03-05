@@ -4,11 +4,17 @@ import { API_BASE, authHeaders, jsonAuthHeaders } from '../config/api'
 
 type Holiday = { id: number; date: string; name?: string; recurring: boolean }
 
-export default function HolidaysContent({ readOnly = false }: { readOnly?: boolean }) {
+type Props = {
+  readOnly?: boolean
+  compact?: boolean
+}
+
+export default function HolidaysContent({ readOnly = false, compact = false }: Props) {
   const [list, setList] = useState<Holiday[]>([])
   const [date, setDate] = useState('')
   const [name, setName] = useState('')
   const [recurring, setRecurring] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   useEffect(() => { fetchHolidays() }, [])
 
@@ -31,6 +37,7 @@ export default function HolidaysContent({ readOnly = false }: { readOnly?: boole
       setDate('')
       setName('')
       setRecurring(false)
+      setIsModalOpen(false)
       fetchHolidays()
     } catch (e) { console.error(e) }
   }
@@ -42,34 +49,23 @@ export default function HolidaysContent({ readOnly = false }: { readOnly?: boole
   }
 
   return (
-    <>
-      <h1 style={{ margin: '0 0 20px 0', fontSize: 22, color: PALETTE.textPrimary }}>Feriados</h1>
-
-      {!readOnly && (
-      <div style={{ ...cardStyle, maxWidth: 480, marginBottom: 24 }}>
-        <h3 style={{ margin: '0 0 16px 0', fontSize: 16, color: PALETTE.textPrimary }}>Novo Feriado</h3>
-        <form onSubmit={createHoliday} style={{ display: 'grid', gap: 12 }}>
-          <div>
-            <label style={{ display: 'block', fontWeight: 600, fontSize: 13, color: PALETTE.textSecondary, marginBottom: 4 }}>Data</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required style={inputStyle} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontWeight: 600, fontSize: 13, color: PALETTE.textSecondary, marginBottom: 4 }}>Nome (opcional)</label>
-            <input placeholder="Ex: Natal" value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '8px 10px', background: PALETTE.hoverBg, borderRadius: 6 }}>
-            <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} style={{ width: 18, height: 18, accentColor: PALETTE.primary }} />
-            <div>
-              <span style={{ fontWeight: 600, fontSize: 13, color: PALETTE.textPrimary }}>Recorrente (anual)</span>
-              <div style={{ fontSize: 12, color: PALETTE.textSecondary }}>Repete todos os anos na mesma data</div>
-            </div>
-          </label>
-          <button type="submit" style={btnPrimary}>Criar</button>
-        </form>
-      </div>
+    <div style={compact ? { maxWidth: 560 } : undefined}>
+      {!compact && (
+        <h1 style={{ margin: '0 0 20px 0', fontSize: 22, color: PALETTE.textPrimary }}>Feriados</h1>
       )}
 
-      <h3 style={{ margin: '0 0 12px 0', fontSize: 16, color: PALETTE.textPrimary }}>Lista</h3>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <h3 style={{ margin: 0, fontSize: 16, color: PALETTE.textPrimary }}>Lista</h3>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            style={btnPrimary}
+          >
+            Novo feriado
+          </button>
+        )}
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {list.map(h => (
           <div key={h.id} style={{
@@ -100,6 +96,58 @@ export default function HolidaysContent({ readOnly = false }: { readOnly?: boole
         ))}
         {list.length === 0 && <div style={{ color: PALETTE.textDisabled, padding: 16 }}>Nenhum feriado cadastrado</div>}
       </div>
-    </>
+
+      {!readOnly && isModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: '#00000088',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100,
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setIsModalOpen(false) }}
+        >
+          <div
+            style={{
+              width: 480,
+              maxWidth: '95%',
+              background: PALETTE.cardBg,
+              borderRadius: 8,
+              padding: 20,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: PALETTE.textPrimary }}>Novo Feriado</h3>
+              <button type="button" onClick={() => setIsModalOpen(false)} style={btnSmall}>✕ Fechar</button>
+            </div>
+            <form onSubmit={createHoliday} style={{ display: 'grid', gap: 12 }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 600, fontSize: 13, color: PALETTE.textSecondary, marginBottom: 4 }}>Data</label>
+                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 600, fontSize: 13, color: PALETTE.textSecondary, marginBottom: 4 }}>Nome (opcional)</label>
+                <input placeholder="Ex: Natal" value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '8px 10px', background: PALETTE.hoverBg, borderRadius: 6 }}>
+                <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} style={{ width: 18, height: 18, accentColor: PALETTE.primary }} />
+                <div>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: PALETTE.textPrimary }}>Recorrente (anual)</span>
+                  <div style={{ fontSize: 12, color: PALETTE.textSecondary }}>Repete todos os anos na mesma data</div>
+                </div>
+              </label>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                <button type="button" onClick={() => setIsModalOpen(false)} style={btnSmall}>Cancelar</button>
+                <button type="submit" style={btnPrimary}>Criar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

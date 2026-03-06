@@ -158,6 +158,9 @@ export default function VacationsPage() {
   // Holiday info modal
   const [holidayModalData, setHolidayModalData] = useState<Holiday[] | null>(null)
 
+  // keep track of which anniversary toasts we've already shown this session
+  const [shownAnniv, setShownAnniv] = useState<number[]>([])
+
   // Day detail modal
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   // Panel open state for enter/exit animation
@@ -181,6 +184,20 @@ export default function VacationsPage() {
     setIsAdmin(localStorage.getItem('plantoes_role') === 'ADMIN')
     load()
   }, [])
+
+  // show bottom-left toasts for upcoming anniversaries (<= 30 days)
+  useEffect(() => {
+    if (!summary || summary.length === 0) return
+    summary.forEach(s => {
+      const days = daysUntilNextVacation(s.hireDate)
+      if (days !== null && days <= 30 && !shownAnniv.includes(s.id)) {
+        const name = s.name
+        const msg = days === 0 ? `Hoje é aniversário de contratação de ${name}!` : `Faltam ${days} dias para o aniversário de contratação de ${name}`
+        addToast(msg, 'info', 8000, 'bottom-right')
+        setShownAnniv(prev => [...prev, s.id])
+      }
+    })
+  }, [summary, shownAnniv, addToast])
 
   // update every second so tenure display shows hh:mm:ss
   useEffect(() => {
@@ -932,7 +949,7 @@ export default function VacationsPage() {
                               <div style={{ fontSize: 12, color: PALETTE.textSecondary }}>{nextVacationDate}</div>
                             )}
                             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                              <div style={{ fontSize: 18, fontWeight: 700, color: colorForDays(daysLeft) }}>{daysLeft}</div>
+                              <div style={{ minWidth: 30, fontSize: 18, fontWeight: 700, color: colorForDays(daysLeft) }}>{daysLeft}</div>
                               <div style={{ fontSize: 10, color: PALETTE.textSecondary }}>dias</div>
                             </div>
                           </div>

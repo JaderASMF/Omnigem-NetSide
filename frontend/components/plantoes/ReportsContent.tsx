@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { PALETTE, btnPrimary, inputStyle, labelStyle, cardStyle } from '../styles/theme'
-import { API_BASE } from '../config/api'
+import { PALETTE, btnPrimary, inputStyle, labelStyle, cardStyle } from '../../styles/theme'
+import { API_BASE } from '../../config/api'
 
 const WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { PALETTE, btnPrimary, btnSmall, inputStyle, cardStyle } from '../styles/theme'
-import { API_BASE, authHeaders, jsonAuthHeaders } from '../config/api'
+import { PALETTE, btnPrimary, btnSmall, inputStyle, cardStyle } from '../../styles/theme'
+import { API_BASE, authHeaders, jsonAuthHeaders } from '../../config/api'
 
 type Holiday = { id: number; date: string; name?: string; recurring: boolean }
 

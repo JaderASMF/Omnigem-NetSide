@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { API_BASE } from '../config/api';
+import { API_BASE } from '../../config/api';
 
 export default function RecurringPatternForm({ initial, initialRotation, onSave, onCancel }: { initial?: any; initialRotation?: any[]; onSave: (p:any)=>void; onCancel: ()=>void }) {
   const [workerId, setWorkerId] = useState<number | ''>(initial?.workerId ?? '');

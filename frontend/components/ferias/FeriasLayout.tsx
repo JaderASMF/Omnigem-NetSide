@@ -1,70 +1,39 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
-import { PALETTE } from '../styles/theme'
-import WorkersContent from './WorkersContent'
-import HolidaysContent from './HolidaysContent'
-import AssignmentsContent from './AssignmentsContent'
-import ReportsContent from './ReportsContent'
+import { PALETTE } from '../../styles/theme'
 
-export type TabKey = 'dashboard' | 'workers' | 'holidays' | 'assignments' | 'reports';
+export type FeriasTab = 'dashboard' | 'list'
 
-const TABS: { key: TabKey; label: string; icon: string }[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: '◻' },
-  { key: 'workers', label: 'Trabalhadores', icon: '👷' },
-  { key: 'holidays', label: 'Feriados', icon: '🎉' },
-  { key: 'assignments', label: 'Atribuições', icon: '📋' },
-  { key: 'reports', label: 'Relatórios', icon: '📊' },
-];
+const TABS: { key: FeriasTab; label: string; icon: string }[] = [
+  { key: 'dashboard', label: 'Painel', icon: '📊' },
+  { key: 'list', label: 'Lançamentos', icon: '📋' },
+]
 
-function isTabKey(value: string): value is TabKey {
-  return TABS.some(t => t.key === value)
-}
-
-export default function DashboardLayout({ initialTab, dashboardContent }: {
-  initialTab?: TabKey;
-  dashboardContent?: ReactNode;
+export default function FeriasLayout({
+  activeTab,
+  onTabChange,
+  isAdmin,
+  children,
+  headerActions,
+}: {
+  activeTab: FeriasTab
+  onTabChange: (tab: FeriasTab) => void
+  isAdmin: boolean
+  children: ReactNode
+  headerActions?: ReactNode
 }) {
   const router = useRouter()
   const [role, setRole] = useState<string | null>(null)
-  const initialFromQuery = typeof router.query.tab === 'string' && isTabKey(router.query.tab)
-    ? router.query.tab
-    : (initialTab ?? 'dashboard')
-  const [activeTab, setActiveTab] = useState<TabKey>(initialFromQuery)
 
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('plantoes_token') : null
     const storedRole = typeof window !== 'undefined' ? localStorage.getItem('plantoes_role') : null
-    // Allow guest access (empty token) but require that role is set
-    if (token === null && storedRole === null) {
-      router.push('/login')
-      return
-    }
     setRole(storedRole === 'ADMIN' ? 'admin' : 'guest')
-  }, [router])
-
-  useEffect(() => {
-    const queryTab = router.query.tab
-    if (typeof queryTab === 'string' && isTabKey(queryTab) && queryTab !== activeTab) {
-      setActiveTab(queryTab)
-    }
-  }, [router.query.tab, activeTab])
+  }, [])
 
   function logout() {
     localStorage.removeItem('plantoes_token')
     localStorage.removeItem('plantoes_role')
     router.push('/login')
-  }
-
-  const isAdmin = role === 'admin';
-
-  function renderContent() {
-    switch (activeTab) {
-      case 'workers': return <WorkersContent readOnly={!isAdmin} />;
-      case 'holidays': return <HolidaysContent readOnly={!isAdmin} />;
-      case 'assignments': return <AssignmentsContent readOnly={!isAdmin} />;
-      case 'reports': return <ReportsContent />;
-      default: return dashboardContent ?? null;
-    }
   }
 
   return (
@@ -82,22 +51,18 @@ export default function DashboardLayout({ initialTab, dashboardContent }: {
         overflow: 'auto',
         flexShrink: 0,
       }}>
-        <h2 style={{ margin: '0 0 4px 0', fontSize: 20, color: PALETTE.textPrimary }}>Plantões</h2>
+        <h2 style={{ margin: '0 0 4px 0', fontSize: 20, color: PALETTE.textPrimary }}>Férias</h2>
         <p style={{ margin: '0 0 20px 0', fontSize: 12, color: PALETTE.textSecondary }}>
           Role: <strong style={{ color: PALETTE.primary }}>{role}</strong>
         </p>
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
-          {/* Abas internas */}
           {TABS.map(tab => {
-            const isActive = activeTab === tab.key;
+            const isActive = activeTab === tab.key
             return (
               <button
                 key={tab.key}
-                onClick={() => {
-                  setActiveTab(tab.key)
-                  router.push({ pathname: '/dashboard', query: { tab: tab.key } }, undefined, { shallow: true })
-                }}
+                onClick={() => onTabChange(tab.key)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -118,32 +83,16 @@ export default function DashboardLayout({ initialTab, dashboardContent }: {
                 <span style={{ fontSize: 16 }}>{tab.icon}</span>
                 {tab.label}
               </button>
-            );
+            )
           })}
 
-          {/* Separador */}
-          <div style={{ height: 1, background: PALETTE.border, margin: '8px 0' }} />
-
-          {/* Link externo para o calendário */}
-          <a
-            href="/calendar"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '10px 12px',
-              borderRadius: 6,
-              color: PALETTE.textSecondary,
-              background: 'transparent',
-              fontWeight: 400,
-              fontSize: 14,
-              textDecoration: 'none',
-              transition: 'background 0.15s',
-            }}
-          >
-            <span style={{ fontSize: 16 }}>📅</span>
-            Calendário / Rodízios
-          </a>
+          {/* Actions within sidebar when admin */}
+          {headerActions && (
+            <>
+              <div style={{ height: 1, background: PALETTE.border, margin: '8px 0' }} />
+              {headerActions}
+            </>
+          )}
         </nav>
 
         <div style={{ paddingTop: 16, borderTop: `1px solid ${PALETTE.border}` }}>
@@ -189,7 +138,7 @@ export default function DashboardLayout({ initialTab, dashboardContent }: {
         color: PALETTE.textPrimary,
         overflow: 'auto',
       }}>
-        {renderContent()}
+        {children}
       </main>
     </div>
   )

@@ -1,7 +1,7 @@
 import type { GetServerSideProps } from 'next'
 
-export default function AssignmentsPage() { return null }
+export default function AssignmentsRedirect() { return null }
 
 export const getServerSideProps: GetServerSideProps = async () => ({
-  redirect: { destination: '/dashboard?tab=assignments', permanent: false },
+  redirect: { destination: '/plantoes?tab=assignments', permanent: true },
 })

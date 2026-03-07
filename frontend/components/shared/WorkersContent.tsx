@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { PALETTE, btnPrimary, btnSmall, inputStyle, cardStyle } from '../styles/theme'
+import { PALETTE, btnPrimary, btnSmall, inputStyle, cardStyle } from '../../styles/theme'
 import { useToast } from './ToastProvider'
-import { API_BASE, authHeaders, jsonAuthHeaders } from '../config/api'
+import { API_BASE, authHeaders, jsonAuthHeaders } from '../../config/api'
 
 function parseLocalDate(s: string) {
   const [y, m, d] = s.slice(0, 10).split('-').map(Number)
@@ -49,7 +49,7 @@ const COLOR_PRESETS = [
   '#E91E63', '#8BC34A', '#3F51B5', '#FFC107',
 ];
 
-export default function WorkersContent({ readOnly = false }: { readOnly?: boolean }) {
+export default function WorkersContent({ readOnly = false, showTitle = true }: { readOnly?: boolean; showTitle?: boolean }) {
   const [list, setList] = useState<Worker[]>([])
   const [name, setName] = useState('')
   const [color, setColor] = useState('')
@@ -57,6 +57,8 @@ export default function WorkersContent({ readOnly = false }: { readOnly?: boolea
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [terminationDate, setTerminationDate] = useState('')
+  const [showInactive, setShowInactive] = useState(false)
+  const [sortActiveFirst, setSortActiveFirst] = useState(true)
 
   useEffect(() => { fetchWorkers() }, [])
 
@@ -126,7 +128,6 @@ export default function WorkersContent({ readOnly = false }: { readOnly?: boolea
 
     // If worker already has a terminationDate, do not overwrite it.
     const payload: any = { active: false }
-    if (!worker.terminationDate) payload.terminationDate = termination
 
     try {
       const res = await fetch(`${API_BASE}/workers/${worker.id}`, {
@@ -192,21 +193,42 @@ export default function WorkersContent({ readOnly = false }: { readOnly?: boolea
     setIsModalOpen(true)
   }
 
+  const displayed = list
+    .filter(w => showInactive ? true : w.active)
+    .slice()
+    .sort((a, b) => (sortActiveFirst ? Number(b.active) - Number(a.active) : Number(a.active) - Number(b.active)))
+
   return (
     <>
-      <h1 style={{ margin: '0 0 20px 0', fontSize: 22, color: PALETTE.textPrimary }}>Trabalhadores</h1>
+      {showTitle && <h1 style={{ margin: '0 0 20px 0', fontSize: 22, color: PALETTE.textPrimary }}>Trabalhadores</h1>}
 
-      <div style={{ maxWidth: 480, marginBottom: 24, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
-        {!readOnly && (
-          <button onClick={openCreateModal} style={btnPrimary}>
-            Adicionar Trabalhador
-          </button>
-        )}
+      <div style={{ maxWidth: 480, marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          {!readOnly && (
+            <button onClick={openCreateModal} style={btnPrimary}>
+              Adicionar Trabalhador
+            </button>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: PALETTE.textSecondary, fontSize: 13 }}>
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+            Mostrar demitidos
+          </label>
+          <select
+            value={sortActiveFirst ? 'active' : 'inactive'}
+            onChange={(e) => setSortActiveFirst(e.target.value === 'active')}
+            style={{ padding: '6px 8px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, background: PALETTE.cardBg, color: PALETTE.textPrimary, fontSize: 13 }}
+          >
+            <option value="active">Ativos primeiro</option>
+            <option value="inactive">Inativos primeiro</option>
+          </select>
+        </div>
       </div>
 
       <h3 style={{ margin: '0 0 12px 0', fontSize: 16, color: PALETTE.textPrimary }}>Lista</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {list.map(w => (
+        {displayed.map(w => (
           <div key={w.id} style={{
             display: 'flex',
             alignItems: 'center',
@@ -214,7 +236,7 @@ export default function WorkersContent({ readOnly = false }: { readOnly?: boolea
             padding: '10px 14px',
             background: PALETTE.cardBg,
             borderRadius: 8,
-            borderLeft: w.color ? `4px solid ${w.color}` : `4px solid ${PALETTE.border}`,
+            borderLeft: !w.active ? `4px solid ${PALETTE.error}` : (w.color ? `4px solid ${w.color}` : `4px solid ${PALETTE.border}`),
             border: `1px solid ${PALETTE.border}`,
           }}>
             <span style={{
@@ -267,7 +289,7 @@ export default function WorkersContent({ readOnly = false }: { readOnly?: boolea
             )}
           </div>
         ))}
-        {list.length === 0 && <div style={{ color: PALETTE.textDisabled, padding: 16 }}>Nenhum trabalhador cadastrado</div>}
+        {displayed.length === 0 && <div style={{ color: PALETTE.textDisabled, padding: 16 }}>Nenhum trabalhador cadastrado</div>}
       </div>
 
       {isModalOpen && (

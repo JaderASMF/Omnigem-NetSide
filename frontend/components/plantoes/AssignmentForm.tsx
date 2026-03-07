@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { PALETTE, btnPrimary, inputStyle, selectStyle, cardStyle } from '../styles/theme';
-import { API_BASE } from '../config/api';
+import { PALETTE, btnPrimary, inputStyle, selectStyle, cardStyle } from '../../styles/theme';
+import { API_BASE } from '../../config/api';
 
 export default function AssignmentForm({ initial, onSave }: { initial?: any; onSave: (p:any)=>void }) {
   const [date, setDate] = useState('');

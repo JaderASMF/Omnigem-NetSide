@@ -1,5 +1,5 @@
 import React from 'react';
-import { PALETTE, btnSmall } from '../styles/theme';
+import { PALETTE, btnSmall } from '../../styles/theme';
 
 export default function RecurringPatternsList({ items, onEdit, onDelete, workers }: { items: any[]; onEdit: (p:any)=>void; onDelete:(id:number)=>void; workers?: Array<{id:number;name:string}> }) {
   const thStyle: React.CSSProperties = {

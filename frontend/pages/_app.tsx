@@ -1,6 +1,6 @@
 import '../styles/globals.css'
 import type { AppProps } from 'next/app'
-import ToastProvider from '../components/ToastProvider'
+import ToastProvider from '../components/shared/ToastProvider'
 
 export default function App({ Component, pageProps }: AppProps) {
   return (

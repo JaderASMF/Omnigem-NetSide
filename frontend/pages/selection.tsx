@@ -32,8 +32,8 @@ export default function Selection() {
         <p style={{ margin: '0 0 20px 0', color: PALETTE.textSecondary }}>Selecione uma opção</p>
 
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <button onClick={() => router.push('/dashboard')} style={{ ...btnPrimary, flex: 1 }}>Plantões</button>
-          <button onClick={() => router.push('/vacations')} style={{ ...btnPrimary, flex: 1 }}>Férias</button>
+          <button onClick={() => router.push('/plantoes')} style={{ ...btnPrimary, flex: 1 }}>Plantões</button>
+          <button onClick={() => router.push('/ferias')} style={{ ...btnPrimary, flex: 1 }}>Férias</button>
         </div>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 16 }}>
           <button onClick={handleLogout} style={{ ...btnCancel, flex: 1 }}>Sair</button>

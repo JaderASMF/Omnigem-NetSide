@@ -100,8 +100,8 @@ export class VacationsService {
         .filter(v => v.active)
         .reduce((sum, v) => sum + v.daysUsed, 0);
 
-      // Saldo pendente
-      const pendingDays = Math.max(0, totalEarned - totalUsed);
+      // Saldo pendente (pode ser negativo se já utilizou mais dias que acumulou)
+      const pendingDays = totalEarned - totalUsed;
 
       // Próximas férias agendadas (startDate no futuro)
       const upcoming = w.vacations

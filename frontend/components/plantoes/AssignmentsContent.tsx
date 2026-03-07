@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import AssignmentsList from './AssignmentsList';
 import AssignmentForm from './AssignmentForm';
-import { PALETTE, btnPrimary, btnDanger, inputStyle } from '../styles/theme';
-import { API_BASE, authHeaders, jsonAuthHeaders } from '../config/api';
+import { PALETTE, btnPrimary, btnDanger, inputStyle } from '../../styles/theme';
+import { API_BASE, authHeaders, jsonAuthHeaders } from '../../config/api';
 
 export default function AssignmentsContent({ readOnly = false }: { readOnly?: boolean }) {
   const [items, setItems] = useState<any[]>([]);

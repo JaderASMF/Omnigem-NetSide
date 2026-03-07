@@ -1,5 +1,5 @@
 import React from 'react';
-import { PALETTE, btnSmall } from '../styles/theme';
+import { PALETTE, btnSmall } from '../../styles/theme';
 
 type Props = {
   items: any[];

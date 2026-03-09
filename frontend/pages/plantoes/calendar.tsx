@@ -530,6 +530,7 @@ export default function CalendarPage() {
             isAdmin={isAdmin}
             onCreateRotation={(d) => { setRotModal('new'); setRotScheduleFrom(d); }}
             onClose={() => setSelectedDay(null)}
+            onHolidayUpdated={async () => { await loadCalendar(viewDate) }}
           />
         )}
       </div>
@@ -637,7 +638,7 @@ export default function CalendarPage() {
 /* ══════════════════════════════════════════════════════
    Componente: Painel de informações do dia
    ══════════════════════════════════════════════════════ */
-function DayInfoPanel({ date, dayData, workers, rotations, onClose, isAdmin, onCreateRotation }: {
+function DayInfoPanel({ date, dayData, workers, rotations, onClose, isAdmin, onCreateRotation, onHolidayUpdated }: {
   date: string;
   dayData: DayData | null;
   workers: Worker[];
@@ -645,6 +646,7 @@ function DayInfoPanel({ date, dayData, workers, rotations, onClose, isAdmin, onC
   onClose: () => void;
   isAdmin?: boolean;
   onCreateRotation?: (date: string) => void;
+  onHolidayUpdated?: () => void;
 }) {
   const d = new Date(date + 'T00:00:00Z');
   const dayOfWeek = WEEKDAY_LABELS[d.getUTCDay()];
@@ -652,6 +654,31 @@ function DayInfoPanel({ date, dayData, workers, rotations, onClose, isAdmin, onC
 
   const entries = dayData?.entries ?? [];
   const holiday = dayData?.holiday;
+  const [editingHoliday, setEditingHoliday] = useState(false)
+  const [holidayNameEdit, setHolidayNameEdit] = useState('')
+  const [holidayRecurringEdit, setHolidayRecurringEdit] = useState(false)
+
+  const [showCreateHoliday, setShowCreateHoliday] = useState(false)
+  const [createHolidayName, setCreateHolidayName] = useState('')
+  const [createHolidayRecurring, setCreateHolidayRecurring] = useState(false)
+  const [createHolidayDate, setCreateHolidayDate] = useState(date)
+
+  React.useEffect(() => {
+    setCreateHolidayDate(date)
+    setCreateHolidayName('')
+    setCreateHolidayRecurring(false)
+  }, [date])
+
+  React.useEffect(() => {
+    if (holiday) {
+      setHolidayNameEdit(holiday.name ?? '')
+      setHolidayRecurringEdit(!!holiday.recurring)
+    } else {
+      setHolidayNameEdit('')
+      setHolidayRecurringEdit(false)
+    }
+    setEditingHoliday(false)
+  }, [holiday])
   const notes = Array.from(new Set(entries.map(e => e.note).filter(Boolean)));
   const sources = [...new Set(entries.map(e => e.source))];
 
@@ -685,7 +712,44 @@ function DayInfoPanel({ date, dayData, workers, rotations, onClose, isAdmin, onC
       {holiday && (
         <div style={{ background: `${PALETTE.warning}18`, border: `1px solid ${PALETTE.warning}44`, borderRadius: 6, padding: '8px 10px' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: PALETTE.warning, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Feriado</div>
-          <div style={{ fontSize: 14, fontWeight: 500, background: '#FF6A00', color: '#fff', padding: '6px 8px', borderRadius: 4 }}>{holiday.name ?? 'Feriado'}</div>
+          {!editingHoliday ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, background: '#FF6A00', color: '#fff', padding: '6px 8px', borderRadius: 4 }}>{holiday.name ?? 'Feriado'}</div>
+              {isAdmin && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => setEditingHoliday(true)} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', padding: '6px 8px', borderRadius: 6 }}>Editar</button>
+                  <button onClick={async () => {
+                    if (!holiday) return
+                    if (!confirm('Apagar este feriado?')) return
+                    try {
+                      await fetch(`${API}/holidays/${holiday.id}`, { method: 'DELETE', headers: authHeaders() })
+                      onHolidayUpdated && onHolidayUpdated()
+                      setEditingHoliday(false)
+                    } catch (err) { console.error(err) }
+                  }} style={{ ...btnSmallRed, padding: '6px 8px' }}>Apagar</button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              if (!holiday) return
+              try {
+                await fetch(`${API}/holidays/${holiday.id}`, { method: 'PUT', headers: jsonAuthHeaders(), body: JSON.stringify({ name: holidayNameEdit || undefined, recurring: holidayRecurringEdit }) })
+                setEditingHoliday(false)
+                onHolidayUpdated && onHolidayUpdated()
+              } catch (err) { console.error(err) }
+            }} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <input value={holidayNameEdit} onChange={e => setHolidayNameEdit(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 6, border: `1px solid ${PALETTE.border}`, background: PALETTE.cardBg, color: PALETTE.textPrimary }} />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={holidayRecurringEdit} onChange={e => setHolidayRecurringEdit(e.target.checked)} /> Recorrente
+              </label>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => { setEditingHoliday(false); setHolidayNameEdit(holiday.name ?? ''); setHolidayRecurringEdit(!!holiday.recurring) }} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', padding: '6px 8px', borderRadius: 6 }}>Cancelar</button>
+                <button type="submit" style={{ background: PALETTE.primary, border: 'none', color: '#fff', padding: '6px 10px', borderRadius: 6 }}>Salvar</button>
+              </div>
+            </form>
+          )}
           {holiday.recurring && <div style={{ fontSize: 11, color: PALETTE.textSecondary, marginTop: 2 }}>Recorrente (anual)</div>}
         </div>
       )}
@@ -768,12 +832,49 @@ function DayInfoPanel({ date, dayData, workers, rotations, onClose, isAdmin, onC
       {/* Footer com ações */}
       {isAdmin && (
         <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={() => setShowCreateHoliday(true)} style={{ ...btnPrimary, background: '#FF6A00', border: 'none' }}>+ Feriado</button>
           <button onClick={() => onCreateRotation?.(date)} style={btnPrimary}>+ Rodízio</button>
+        </div>
+      )}
+
+      {showCreateHoliday && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }} onClick={e => { if (e.target === e.currentTarget) setShowCreateHoliday(false) }}>
+          <div style={{ width: 420, maxWidth: '95%', background: PALETTE.cardBg, borderRadius: 8, padding: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: PALETTE.textPrimary }}>Novo Feriado</h3>
+              <button onClick={() => setShowCreateHoliday(false)} style={{ ...btnSmall, background: 'transparent' }}>✕</button>
+            </div>
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              try {
+                await fetch(`${API}/holidays`, { method: 'POST', headers: jsonAuthHeaders(), body: JSON.stringify({ date: createHolidayDate, name: createHolidayName || undefined, recurring: createHolidayRecurring }) })
+                setShowCreateHoliday(false)
+                onHolidayUpdated && onHolidayUpdated()
+              } catch (err) { console.error(err) }
+            }} style={{ display: 'grid', gap: 8 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, color: PALETTE.textSecondary, marginBottom: 6 }}>Data</label>
+                <input type="date" value={createHolidayDate} onChange={e => setCreateHolidayDate(e.target.value)} required style={{ width: '100%', padding: 8, borderRadius: 6, border: `1px solid ${PALETTE.border}`, background: PALETTE.cardBg, color: PALETTE.textPrimary }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, color: PALETTE.textSecondary, marginBottom: 6 }}>Nome (opcional)</label>
+                <input value={createHolidayName} onChange={e => setCreateHolidayName(e.target.value)} placeholder="Ex: Natal" style={{ width: '100%', padding: 8, borderRadius: 6, border: `1px solid ${PALETTE.border}`, background: PALETTE.cardBg, color: PALETTE.textPrimary }} />
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={createHolidayRecurring} onChange={e => setCreateHolidayRecurring(e.target.checked)} /> Recorrente
+              </label>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
+                <button type="button" onClick={() => setShowCreateHoliday(false)} style={btnSmall}>Cancelar</button>
+                <button type="submit" style={btnPrimary}>Criar</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </aside>
   );
 }
+
 
 /* ══════════════════════════════════════════════════════
    Componente: Modal genérico

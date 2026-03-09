@@ -14,6 +14,7 @@ export default function HolidaysContent({ readOnly = false, compact = false }: P
   const [date, setDate] = useState('')
   const [name, setName] = useState('')
   const [recurring, setRecurring] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
 
   useEffect(() => { fetchHolidays() }, [])
@@ -37,6 +38,24 @@ export default function HolidaysContent({ readOnly = false, compact = false }: P
       setDate('')
       setName('')
       setRecurring(false)
+      setIsModalOpen(false)
+      fetchHolidays()
+    } catch (e) { console.error(e) }
+  }
+
+  async function updateHoliday(e: any) {
+    e.preventDefault()
+    if (editingId === null) return
+    try {
+      await fetch(`${API_BASE}/holidays/${editingId}`, {
+        method: 'PUT',
+        headers: jsonAuthHeaders(),
+        body: JSON.stringify({ date, name: name || undefined, recurring }),
+      })
+      setDate('')
+      setName('')
+      setRecurring(false)
+      setEditingId(null)
       setIsModalOpen(false)
       fetchHolidays()
     } catch (e) { console.error(e) }
@@ -91,7 +110,24 @@ export default function HolidaysContent({ readOnly = false, compact = false }: P
                 }}>Recorrente</span>
               )}
             </div>
-            {!readOnly && <button onClick={() => remove(h.id)} style={{ ...btnSmall, color: PALETTE.error, background: `${PALETTE.error}18`, borderColor: PALETTE.error }}>Apagar</button>}
+            {!readOnly && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => {
+                    setEditingId(h.id)
+                    try {
+                      const d = new Date(h.date).toISOString().slice(0, 10)
+                      setDate(d)
+                    } catch (err) { setDate(h.date) }
+                    setName(h.name || '')
+                    setRecurring(!!h.recurring)
+                    setIsModalOpen(true)
+                  }}
+                  style={{ ...btnSmall, color: PALETTE.primary, background: `${PALETTE.primary}18`, borderColor: PALETTE.primary }}
+                >Editar</button>
+                <button onClick={() => remove(h.id)} style={{ ...btnSmall, color: PALETTE.error, background: `${PALETTE.error}18`, borderColor: PALETTE.error }}>Apagar</button>
+              </div>
+            )}
           </div>
         ))}
         {list.length === 0 && <div style={{ color: PALETTE.textDisabled, padding: 16 }}>Nenhum feriado cadastrado</div>}
@@ -124,7 +160,7 @@ export default function HolidaysContent({ readOnly = false, compact = false }: P
               <h3 style={{ margin: 0, fontSize: 16, color: PALETTE.textPrimary }}>Novo Feriado</h3>
               <button type="button" onClick={() => setIsModalOpen(false)} style={btnSmall}>✕ Fechar</button>
             </div>
-            <form onSubmit={createHoliday} style={{ display: 'grid', gap: 12 }}>
+            <form onSubmit={editingId ? updateHoliday : createHoliday} style={{ display: 'grid', gap: 12 }}>
               <div>
                 <label style={{ display: 'block', fontWeight: 600, fontSize: 13, color: PALETTE.textSecondary, marginBottom: 4 }}>Data</label>
                 <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required style={inputStyle} />
@@ -140,9 +176,9 @@ export default function HolidaysContent({ readOnly = false, compact = false }: P
                   <div style={{ fontSize: 12, color: PALETTE.textSecondary }}>Repete todos os anos na mesma data</div>
                 </div>
               </label>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button type="button" onClick={() => setIsModalOpen(false)} style={btnSmall}>Cancelar</button>
-                <button type="submit" style={btnPrimary}>Criar</button>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                <button type="button" onClick={() => { setIsModalOpen(false); setEditingId(null) }} style={btnSmall}>Cancelar</button>
+                <button type="submit" style={btnPrimary}>{editingId ? 'Salvar' : 'Criar'}</button>
               </div>
             </form>
           </div>

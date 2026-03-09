@@ -155,6 +155,14 @@ export default function VacationsPage() {
   const [filterMaxDays, setFilterMaxDays] = useState<number | ''>('')
 
   const [holidayModalData, setHolidayModalData] = useState<Holiday[] | null>(null)
+  const [editingHolidayId, setEditingHolidayId] = useState<number | null>(null)
+  const [editingHolidayName, setEditingHolidayName] = useState('')
+  const [editingHolidayRecurring, setEditingHolidayRecurring] = useState(false)
+
+  const [showCreateHoliday, setShowCreateHoliday] = useState(false)
+  const [createHolidayName, setCreateHolidayName] = useState('')
+  const [createHolidayRecurring, setCreateHolidayRecurring] = useState(false)
+  const [createHolidayDate, setCreateHolidayDate] = useState('')
 
   const [shownAnniv, setShownAnniv] = useState<number[]>([])
 
@@ -539,10 +547,50 @@ export default function VacationsPage() {
                       <h3 style={{ margin: 0, fontSize: 15, color: '#daa520' }}>Feriados</h3>
                     </div>
                     {dayHols.map(h => (
-                      <div key={h.id} style={{
-                        padding: '12px 14px', background: '#FF6A00', borderRadius: 8, marginBottom: 6,
-                      }}>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{h.name}</div>
+                      <div key={h.id} style={{ padding: '12px 14px', background: '#FF6A00', borderRadius: 8, marginBottom: 6 }}>
+                        {editingHolidayId === h.id ? (
+                          <form onSubmit={async (e) => {
+                            e.preventDefault()
+                            try {
+                              await fetch(`${API_BASE}/holidays/${h.id}`, {
+                                method: 'PUT', headers: jsonAuthHeaders(),
+                                body: JSON.stringify({ date: h.date, name: editingHolidayName || undefined, recurring: editingHolidayRecurring }),
+                              })
+                              setEditingHolidayId(null)
+                              setEditingHolidayName('')
+                              setEditingHolidayRecurring(false)
+                              await load()
+                            } catch (err) { console.error(err) }
+                          }} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <input value={editingHolidayName} onChange={e => setEditingHolidayName(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <input type="checkbox" checked={editingHolidayRecurring} onChange={e => setEditingHolidayRecurring(e.target.checked)} /> Recorrente
+                              </label>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                              <button type="button" onClick={() => { setEditingHolidayId(null); setEditingHolidayName(''); setEditingHolidayRecurring(false) }} style={btnSmall}>Cancelar</button>
+                              <button type="submit" style={btnPrimary}>Salvar</button>
+                            </div>
+                          </form>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <div>
+                              <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{h.name}</div>
+                              <div style={{ fontSize: 13, color: '#fff', marginTop: 6 }}>📅 {fmtDate(h.date)}</div>
+                            </div>
+                            {isAdmin && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <button onClick={() => {
+                                  setEditingHolidayId(h.id)
+                                  setEditingHolidayName(h.name || '')
+                                  setEditingHolidayRecurring(false)
+                                }} style={btnSmall}>Editar</button>
+                                <button onClick={async () => { if (confirm('Apagar este feriado?')) { await fetch(`${API_BASE}/holidays/${h.id}`, { method: 'DELETE', headers: authHeaders() }); await load() } }} style={{ ...btnSmallRed }}>Apagar</button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -573,7 +621,7 @@ export default function VacationsPage() {
                         <span style={{ width: 14, height: 14, borderRadius: '50%', background: w?.color || PALETTE.border, flexShrink: 0 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                            <strong style={{ fontSize: 14, display: 'block', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w?.name || '?'}</strong>
+                            <strong style={{ fontSize: 14, display: 'block', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w?.name || '?'}</strong>
                             {v.sold && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: `${PALETTE.info}22`, color: PALETTE.info }}>Vendeu</span>}
                           </div>
                           <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 4 }}>
@@ -610,25 +658,73 @@ export default function VacationsPage() {
               {/* Footer with action */}
                 {isAdmin && (
                 <div style={{ padding: '16px 24px', borderTop: `1px solid ${PALETTE.border}`, background: PALETTE.backgroundSecondary }}>
-                  <button
-                    onClick={() => {
-                      const sel = isoDate(selectedDay)
-                      setPanelOpen(false)
-                      setTimeout(() => {
-                        setSelectedDay(null)
-                        resetForm()
-                        setFormStart(sel)
-                        setShowScheduleModal(true)
-                      }, 300)
-                    }}
-                    style={{ ...btnPrimary, width: '100%', textAlign: 'center' }}
-                  >+ Agendar férias neste dia</button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={() => {
+                        const sel = isoDate(selectedDay)
+                        setCreateHolidayDate(sel)
+                        setCreateHolidayName('')
+                        setCreateHolidayRecurring(false)
+                        setShowCreateHoliday(true)
+                      }}
+                      style={{ ...btnSmall, minWidth: 140 }}
+                    >+ Feriado</button>
+
+                    <button
+                      onClick={() => {
+                        const sel = isoDate(selectedDay)
+                        setPanelOpen(false)
+                        setTimeout(() => {
+                          setSelectedDay(null)
+                          resetForm()
+                          setFormStart(sel)
+                          setShowScheduleModal(true)
+                        }, 300)
+                      }}
+                      style={{ ...btnPrimary, flex: 1, textAlign: 'center' }}
+                    >+ Agendar férias neste dia</button>
+                  </div>
                 </div>
               )}
             </div>
           </div>
         )
       })()}
+
+      {/* Modal: Create Holiday (from day detail) */}
+      {showCreateHoliday && (
+        <div style={{ position: 'fixed', inset: 0, background: '#00000066', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}
+          onClick={e => { if (e.target === e.currentTarget) setShowCreateHoliday(false) }}>
+          <div style={{ width: 420, maxWidth: '95%', background: PALETTE.cardBg, borderRadius: 10, padding: 20, boxShadow: '0 12px 48px rgba(0,0,0,0.4)' }}>
+            <h3 style={{ margin: 0, marginBottom: 12, fontSize: 16, color: PALETTE.textPrimary }}>Adicionar feriado</h3>
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              try {
+                await fetch(`${API_BASE}/holidays`, {
+                  method: 'POST', headers: jsonAuthHeaders(),
+                  body: JSON.stringify({ date: createHolidayDate, name: createHolidayName, recurring: createHolidayRecurring }),
+                })
+                setShowCreateHoliday(false)
+                setCreateHolidayName('')
+                setCreateHolidayRecurring(false)
+                setCreateHolidayDate('')
+                await load()
+                addToast('Feriado criado', 'success')
+              } catch (err) { console.error(err); addToast('Erro ao criar feriado', 'error') }
+            }} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <input type="date" value={createHolidayDate} onChange={e => setCreateHolidayDate(e.target.value)} style={inputStyle} />
+              <input value={createHolidayName} onChange={e => setCreateHolidayName(e.target.value)} placeholder="Nome do feriado" style={inputStyle} />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={createHolidayRecurring} onChange={e => setCreateHolidayRecurring(e.target.checked)} /> Recorrente
+              </label>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setShowCreateHoliday(false)} style={btnSmall}>Cancelar</button>
+                <button type="submit" style={btnPrimary}>Salvar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Feriados */}
       {showHolidaysModal && (
@@ -790,7 +886,7 @@ export default function VacationsPage() {
                         >
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: 'calc(100% - 24px)' }}>{w?.name || '?'}</span>
                           {showMore && (
-                            <span style={{ marginLeft: 6, fontSize: 11, color: PALETTE.textDisabled, flexShrink: 0 }}>+{moreCount}</span>
+                            <span style={{ marginLeft: 6, fontSize: 11, color: '#ffffff', flexShrink: 0 }}>+{moreCount}</span>
                           )}
                         </div>
                       )

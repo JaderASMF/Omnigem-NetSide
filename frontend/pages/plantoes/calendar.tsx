@@ -135,10 +135,8 @@ export default function CalendarPage() {
   }, []);
 
   const loadCalendar = useCallback(async (d: Date) => {
-    // Fetch the full visible grid range so days from adjacent months
-    // (shown in the calendar matrix) also have their workers/entries.
     const gridStart = weekStartUTC(startOfMonth(d));
-    const gridEnd = addDays(gridStart, 6 * 7 - 1); // 6 weeks visible (42 days)
+    const gridEnd = addDays(gridStart, 6 * 7 - 1);
     const s = toISO(gridStart);
     const e = toISO(gridEnd);
     try {
@@ -271,9 +269,9 @@ export default function CalendarPage() {
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, padding: 16 }}>
+      <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, padding: 16, height: '100%' }}>
         {tab !== 'reports' && (
-          <aside style={{ width: 400, backgroundColor: PALETTE.backgroundSecondary, borderRadius: 8, padding: 10, border: `1px solid ${PALETTE.border}`, overflow: 'hidden', flexShrink: 0, order: 2, display: 'flex', flexDirection: 'column' }}>
+          <aside style={{ flex: '0 1 20%', maxWidth: '20%', minWidth: 260, backgroundColor: PALETTE.backgroundSecondary, borderRadius: 8, padding: 10, border: `1px solid ${PALETTE.border}`, overflow: 'hidden', flexShrink: 0, order: 2, display: 'flex', flexDirection: 'column' }}>
             <strong style={{ fontSize: 16, color: PALETTE.textPrimary }}>Rodízios</strong>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -329,8 +327,8 @@ export default function CalendarPage() {
           </aside>
         )}
 
-        <div style={{ flex: 1, backgroundColor: PALETTE.backgroundSecondary, borderRadius: 8, padding: 12, border: `1px solid ${PALETTE.border}`, display: tab === 'panel' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0, overflow: 'hidden', order: 1 }}>
-          <div style={{ height: '100%' }}>
+        <div style={{ flex: '0 1 80%', maxWidth: '80%', backgroundColor: PALETTE.backgroundSecondary, borderRadius: 8, padding: 12, border: `1px solid ${PALETTE.border}`, display: tab === 'panel' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0, overflow: 'hidden', order: 1, height: '100%' }}>
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexShrink: 0 }}>
             <button onClick={prevMonth} style={btnNav}>◀ Anterior</button>
             <strong style={{ fontSize: 18, width: '160px', color: PALETTE.textPrimary }}>
@@ -372,8 +370,8 @@ export default function CalendarPage() {
             <button onClick={nextMonth} style={btnNav}>Próximo ▶</button>
           </div>
 
-          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <table style={{ width: '100%', height: '90%', borderCollapse: 'separate', borderSpacing: 6, tableLayout: 'fixed', borderRadius: 10, overflow: 'hidden', boxShadow: '0 6px 18px rgba(0,0,0,0.06)', background: PALETTE.background }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', height: '100%' }}>
+          <table style={{ width: '100%', height: 'auto', borderCollapse: 'separate', borderSpacing: 6, tableLayout: 'fixed', borderRadius: 10, overflow: 'hidden', boxShadow: '0 6px 18px rgba(0,0,0,0.06)', background: PALETTE.background }}>
             <thead>
               <tr>
                 {WEEKDAY_LABELS.map((d, i) => (
@@ -381,7 +379,12 @@ export default function CalendarPage() {
                     key={d}
                     style={{
                       textAlign: 'center',
-                      padding: '12px 8px',
+                      padding: '8px 6px',
+                      height: 44,
+                      maxHeight: 44,
+                      overflow: 'hidden',
+                      whiteSpace: 'nowrap',
+                      textOverflow: 'ellipsis',
                       borderBottom: `1px solid ${PALETTE.border}`,
                       background: i === 0 || i === 6 ? PALETTE.background : PALETTE.backgroundSecondary,
                       fontWeight: 700,
@@ -416,6 +419,9 @@ export default function CalendarPage() {
                     const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
                     const isHoliday = !!holiday;
+                    const nextMonthDate = new Date(viewDate);
+                    nextMonthDate.setUTCMonth(viewDate.getUTCMonth() + 1);
+                    const isNextMonth = !isCurrentMonth && cell.getUTCMonth() === nextMonthDate.getUTCMonth() && cell.getUTCFullYear() === nextMonthDate.getUTCFullYear();
                     const rotationForDay = findRotationForDate(cell, rotations);
                     const hasNotifyRotation = !isHoliday && (
                       entries.some(e => e.source === 'ROTATION' && e.notifyUpcoming) ||
@@ -431,7 +437,8 @@ export default function CalendarPage() {
                         : isHoliday && isCurrentMonth
                           ? '1px solid #daa520'
                           : `1px solid ${PALETTE.border}`;
-                    const opacity = isCurrentMonth ? 1 : 0.4;
+                    let opacity = isCurrentMonth ? 1 : 0.4;
+                    if (isNextMonth && isHoliday) opacity = 0.5;
 
                     const hasHighlight = isToday || isHoliday;
                     const headerBg = isHoliday ? PALETTE.warning : 'transparent';
@@ -441,16 +448,18 @@ export default function CalendarPage() {
                         key={ci}
                         style={{
                           ...cellStyle,
-                          background: isHoliday && isCurrentMonth
-                            ? 'linear-gradient(135deg, #b8860b22 0%, #daa52044 50%, #b8860b22 100%)'
+                          background: isHoliday && (isCurrentMonth || isNextMonth)
+                            ? (isCurrentMonth
+                                ? 'linear-gradient(135deg, #b8860b22 0%, #daa52044 50%, #b8860b22 100%)'
+                                : 'linear-gradient(135deg, #b8860b11 0%, #daa52022 50%, #b8860b11 100%)')
                             : (isUpcomingSoon && isCurrentMonth
                               ? 'linear-gradient(135deg, #ff6a0022 0%, #ff4a0044 50%, #ff6a0022 100%)'
                               : baseBg),
                           border: borderStyle,
-                          boxShadow: isHoliday && isCurrentMonth
-                            ? '0 0 8px #daa52033, inset 0 0 12px #daa52011'
+                          boxShadow: isHoliday && (isCurrentMonth || isNextMonth)
+                            ? (isCurrentMonth ? '0 0 8px #daa52033, inset 0 0 12px #daa52011' : '0 0 6px #daa52022, inset 0 0 8px #daa52011')
                             : (isUpcomingSoon && isCurrentMonth ? '0 0 8px #ff000033, inset 0 0 12px #ff000011' : undefined),
-                          borderRadius: (isHoliday && isCurrentMonth) || (isUpcomingSoon && isCurrentMonth) ? 8 : 6,
+                          borderRadius: (isHoliday && (isCurrentMonth || isNextMonth)) || (isUpcomingSoon && isCurrentMonth) ? 8 : 6,
                           outline: undefined,
                           cursor: 'pointer',
                           opacity,
@@ -465,15 +474,16 @@ export default function CalendarPage() {
                         }}
                       >
                           <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-                            {holiday && isCurrentMonth && (
+                            {holiday && (isCurrentMonth || isNextMonth) && (
                               <span
                                 data-holiday-star
                                 onClick={(e) => { e.stopPropagation(); setHolidayModalData({ name: holiday.name, date: iso, recurring: holiday.recurring }) }}
                                 title={holiday.name ?? 'Feriado'}
                                 style={{
                                   position: 'absolute', right: 4, top: 3, zIndex: 3,
-                                  fontSize: 15, cursor: 'pointer', lineHeight: 1,
-                                  filter: 'drop-shadow(0 1px 3px rgba(218,165,32,0.6))',
+                                  fontSize: isNextMonth ? 13 : 15, cursor: 'pointer', lineHeight: 1,
+                                  opacity: isNextMonth ? 0.8 : 1,
+                                  filter: isNextMonth ? 'drop-shadow(0 1px 2px rgba(218,165,32,0.35))' : 'drop-shadow(0 1px 3px rgba(218,165,32,0.6))',
                                   transition: 'transform 0.2s ease, filter 0.2s ease',
                                 }}
                                 onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.35) rotate(15deg)'; e.currentTarget.style.filter = 'drop-shadow(0 2px 6px rgba(218,165,32,0.9))' }}
@@ -485,12 +495,13 @@ export default function CalendarPage() {
                                 {cell.getUTCDate()}
                               </span>
                             </div>
-                          {holiday && isCurrentMonth && (
+                          {holiday && (isCurrentMonth || isNextMonth) && (
                             <div style={{
                               padding: '1px 4px', margin: '1px 2px 0',
                               borderRadius: 3, textAlign: 'center',
-                              background: '#FF6A00',
+                              background: isNextMonth ? '#FF6A0022' : '#FF6A00',
                               overflow: 'hidden',
+                              opacity: isNextMonth ? 0.85 : 1,
                             }}>
                             <div title={holiday.name ?? 'Feriado'} style={{
                               fontWeight: 700,

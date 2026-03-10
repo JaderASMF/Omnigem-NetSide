@@ -27,9 +27,8 @@ type Summary = {
   pendingDays: number; upcoming: Vacation[];
 }
 
-type Holiday = { id: number; date: string; name: string }
+type Holiday = { id: number; date: string; name: string; recurring?: boolean }
 
-/* ── Helpers ── */
 function fmtDate(d: string | null | undefined) {
   if (!d) return '—'
   if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) {
@@ -111,7 +110,6 @@ function tenureFull(hireDate: string | null, nowMs?: number) {
   return `${years}a ${months}m ${days}d ${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`
 }
 
-/* ── Tab type ── */
 type Tab = 'dashboard' | 'list'
 
 export default function VacationsPage() {
@@ -218,13 +216,12 @@ export default function VacationsPage() {
     } catch (e) { console.error(e) }
   }
 
-  /* ── Calendar helpers ── */
   const calendarDays = useMemo(() => {
     const year = calMonth.getFullYear()
     const month = calMonth.getMonth()
     const firstDay = new Date(year, month, 1)
     const lastDay = new Date(year, month + 1, 0)
-    const startOffset = firstDay.getDay() // 0=Sun
+    const startOffset = firstDay.getDay()
     const days: { date: Date; current: boolean }[] = []
 
     for (let i = startOffset - 1; i >= 0; i--) {
@@ -239,7 +236,11 @@ export default function VacationsPage() {
       const d = new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1)
       days.push({ date: d, current: false })
     }
-    return days
+
+    const weeks: { date: Date; current: boolean }[][] = []
+    for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7))
+    while (weeks.length > 0 && weeks[weeks.length - 1].every(d => !d.current)) weeks.pop()
+    return weeks.flat()
   }, [calMonth])
 
   function vacationsForDate(date: Date): Vacation[] {
@@ -254,7 +255,6 @@ export default function VacationsPage() {
     })
   }
 
-  /* ── CRUD ── */
   async function onSave(): Promise<boolean> {
     if (!formWorkerId || !formStart || !formEnd || !formDays) {
       addToast('Preencha todos os campos obrigatórios', 'error'); return false
@@ -322,7 +322,6 @@ export default function VacationsPage() {
     setFormDays(''); setFormSold(false); setFormNote('')
   }
 
-  // Auto-calculate days when dates change
   useEffect(() => {
     if (formStart && formEnd) {
       const d = daysBetween(parseLocalDate(formStart), parseLocalDate(formEnd)) + 1
@@ -330,7 +329,6 @@ export default function VacationsPage() {
     }
   }, [formStart, formEnd])
 
-  /* ── Derived data ── */
   const filteredSummary = filterWorkerId ? summary.filter(s => s.id === filterWorkerId) : summary
   const pendingWorkers = filteredSummary
     .filter(s => s.pendingDays !== 0)
@@ -342,21 +340,16 @@ export default function VacationsPage() {
   const baseFilteredVacations = (filterWorkerId ? vacations.filter(v => v.workerId === filterWorkerId) : vacations)
     .slice().sort((a, b) => parseLocalDate(b.startDate.slice(0, 10)).getTime() - parseLocalDate(a.startDate.slice(0, 10)).getTime())
 
-  // Apply advanced filters (search text, date range, sold/active flags, days used)
   const displayedVacations = baseFilteredVacations.filter(v => {
-    // active status
     if (filterActiveStatus === 'active' && !v.active) return false
     if (filterActiveStatus === 'inactive' && v.active) return false
 
-    // sold status
     if (filterSoldStatus === 'sold' && !v.sold) return false
     if (filterSoldStatus === 'not_sold' && v.sold) return false
 
-    // days used range
     if (filterMinDays !== '' && Number(v.daysUsed) < Number(filterMinDays)) return false
     if (filterMaxDays !== '' && Number(v.daysUsed) > Number(filterMaxDays)) return false
 
-    // date range (overlaps)
     if (filterStartDate) {
       const fStart = isoDate(parseLocalDate(filterStartDate))
       const vEnd = isoDate(parseLocalDate(v.endDate.slice(0, 10)))
@@ -368,7 +361,6 @@ export default function VacationsPage() {
       if (vStart > fEnd) return false
     }
 
-    // text search
     if (filterSearchText) {
       const text = filterSearchText.toLowerCase()
       if (filterSearchField === 'worker') {
@@ -377,7 +369,6 @@ export default function VacationsPage() {
       } else if (filterSearchField === 'note') {
         if (!v.note || !v.note.toLowerCase().includes(text)) return false
       } else {
-        // any: check worker name and note
         const w = workers.find(x => x.id === v.workerId)
         const wn = w ? w.name.toLowerCase() : ''
         const nn = v.note ? v.note.toLowerCase() : ''
@@ -391,10 +382,22 @@ export default function VacationsPage() {
   const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
   const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
-  /* ── Render ── */
+  const cellStyle: React.CSSProperties = {
+    minHeight: 90,
+    padding: 0,
+    border: `1px solid ${PALETTE.border}`,
+    borderRadius: 6,
+    fontSize: 12,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    position: 'relative',
+    transition: 'background 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease',
+    WebkitTapHighlightColor: 'transparent',
+  }
+
   return (
     <main style={{ height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: PALETTE.background, fontFamily: 'system-ui, sans-serif', color: PALETTE.textPrimary }}>
-      {/* Header */}
       <div style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 16, borderBottom: `1px solid ${PALETTE.border}` }}>
         <button onClick={() => router.push('/selection')} style={btnNav}>← Voltar</button>
         <h1 style={{ margin: 0, fontSize: 22 }}>Férias</h1>
@@ -427,7 +430,6 @@ export default function VacationsPage() {
         {tab === 'list' && renderList()}
       </div>
 
-      {/* Modal: Agendar Férias */}
       {showScheduleModal && (
         <div style={{ position: 'fixed', inset: 0, background: '#000000aa', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 24 }}
           onClick={e => { if (e.target === e.currentTarget) { setShowScheduleModal(false); resetForm() } }}>
@@ -437,7 +439,6 @@ export default function VacationsPage() {
         </div>
       )}
 
-      {/* Modal: Trabalhadores */}
       {showWorkersModal && (
         <div style={{ position: 'fixed', inset: 0, background: '#000000aa', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
           onClick={e => { if (e.target === e.currentTarget) { setShowWorkersModal(false); load() } }}>
@@ -451,7 +452,6 @@ export default function VacationsPage() {
         </div>
       )}
 
-      {/* Modal: Info Feriado (star click) */}
       {holidayModalData && (
         <div style={{ position: 'fixed', inset: 0, background: '#000000aa', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
           onClick={e => { if (e.target === e.currentTarget) setHolidayModalData(null) }}>
@@ -460,7 +460,6 @@ export default function VacationsPage() {
             boxShadow: '0 12px 48px rgba(0,0,0,0.5)', overflow: 'hidden',
             border: '1px solid #daa52066',
           }}>
-            {/* Golden header */}
             <div style={{
               background: 'linear-gradient(135deg, #b8860b 0%, #daa520 50%, #b8860b 100%)',
               padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -474,7 +473,6 @@ export default function VacationsPage() {
                 color: '#fff', cursor: 'pointer', padding: '4px 10px', fontSize: 13, fontWeight: 600,
               }}>✕</button>
             </div>
-            {/* Content */}
             <div style={{ padding: '16px 20px' }}>
               {holidayModalData.map(h => (
                 <div key={h.id} style={{
@@ -490,7 +488,6 @@ export default function VacationsPage() {
         </div>
       )}
 
-      {/* Modal: Day detail */}
       {selectedDay && (() => {
         const dayVacs = vacations.filter(v => {
           if (!v.active) return false
@@ -514,7 +511,6 @@ export default function VacationsPage() {
               transition: 'transform 280ms cubic-bezier(.2,.9,.2,1)',
               willChange: 'transform',
             }}>
-              {/* Header */}
               <div style={{
                 padding: '20px 24px', borderBottom: `1px solid ${PALETTE.border}`,
                 background: PALETTE.backgroundSecondary,
@@ -535,67 +531,52 @@ export default function VacationsPage() {
                 </div>
               </div>
 
-              {/* Content */}
               <div style={{ padding: '20px 24px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-                {/* Holidays section */}
                 {dayHols.length > 0 && (
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                      <span style={{ fontSize: 16 }}>⭐</span>
-                      <h3 style={{ margin: 0, fontSize: 15, color: '#daa520' }}>Feriados</h3>
-                    </div>
                     {dayHols.map(h => (
-                      <div key={h.id} style={{ padding: '12px 14px', background: '#FF6A00', borderRadius: 8, marginBottom: 6 }}>
+                      <div key={h.id} style={{ background: `${PALETTE.warning}18`, border: `1px solid ${PALETTE.warning}44`, borderRadius: 6, padding: '8px 10px', marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: PALETTE.warning, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Feriado</div>
                         {editingHolidayId === h.id ? (
                           <form onSubmit={async (e) => {
                             e.preventDefault()
                             try {
-                              await fetch(`${API_BASE}/holidays/${h.id}`, {
-                                method: 'PUT', headers: jsonAuthHeaders(),
-                                body: JSON.stringify({ date: h.date, name: editingHolidayName || undefined, recurring: editingHolidayRecurring }),
-                              })
+                              await fetch(`${API_BASE}/holidays/${h.id}`, { method: 'PUT', headers: jsonAuthHeaders(), body: JSON.stringify({ name: editingHolidayName || undefined, recurring: editingHolidayRecurring }) })
                               setEditingHolidayId(null)
                               setEditingHolidayName('')
                               setEditingHolidayRecurring(false)
                               await load()
                             } catch (err) { console.error(err) }
                           }} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                              <input value={editingHolidayName} onChange={e => setEditingHolidayName(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-                              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <input type="checkbox" checked={editingHolidayRecurring} onChange={e => setEditingHolidayRecurring(e.target.checked)} /> Recorrente
-                              </label>
-                            </div>
+                            <input value={editingHolidayName} onChange={e => setEditingHolidayName(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 6, border: `1px solid ${PALETTE.border}`, background: PALETTE.cardBg, color: PALETTE.textPrimary }} />
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <input type="checkbox" checked={editingHolidayRecurring} onChange={e => setEditingHolidayRecurring(e.target.checked)} /> Recorrente
+                            </label>
                             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                              <button type="button" onClick={() => { setEditingHolidayId(null); setEditingHolidayName(''); setEditingHolidayRecurring(false) }} style={btnSmall}>Cancelar</button>
-                              <button type="submit" style={btnPrimary}>Salvar</button>
+                              <button type="button" onClick={() => { setEditingHolidayId(null); setEditingHolidayName(''); setEditingHolidayRecurring(false) }} style={{ background: 'transparent', border: `1px solid rgba(255,255,255,0.12)`, color: PALETTE.textPrimary, padding: '6px 8px', borderRadius: 6 }}>Cancelar</button>
+                              <button type="submit" style={{ background: PALETTE.primary, border: 'none', color: '#fff', padding: '6px 10px', borderRadius: 6 }}>Salvar</button>
                             </div>
                           </form>
                         ) : (
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                            <div>
-                              <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{h.name}</div>
-                              <div style={{ fontSize: 13, color: '#fff', marginTop: 6 }}>📅 {fmtDate(h.date)}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <div style={{ fontSize: 14, fontWeight: 500, background: '#FF6A00', color: '#fff', padding: '6px 8px', borderRadius: 4 }}>{h.name ?? 'Feriado'}</div>
+                              <div style={{ fontSize: 13, color: PALETTE.textSecondary }}>📅 {fmtDate(h.date)}</div>
                             </div>
                             {isAdmin && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                <button onClick={() => {
-                                  setEditingHolidayId(h.id)
-                                  setEditingHolidayName(h.name || '')
-                                  setEditingHolidayRecurring(false)
-                                }} style={btnSmall}>Editar</button>
-                                <button onClick={async () => { if (confirm('Apagar este feriado?')) { await fetch(`${API_BASE}/holidays/${h.id}`, { method: 'DELETE', headers: authHeaders() }); await load() } }} style={{ ...btnSmallRed }}>Apagar</button>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button onClick={() => { setEditingHolidayId(h.id); setEditingHolidayName(h.name || ''); setEditingHolidayRecurring(!!h.recurring) }} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: PALETTE.textPrimary, padding: '6px 8px', borderRadius: 6 }}>Editar</button>
+                                <button onClick={async () => { if (!confirm('Apagar este feriado?')) return; try { await fetch(`${API_BASE}/holidays/${h.id}`, { method: 'DELETE', headers: authHeaders() }); await load() } catch (err) { console.error(err) } }} style={{ background: PALETTE.error, color: '#fff', border: 'none', padding: '6px 8px', borderRadius: 6 }}>Apagar</button>
                               </div>
                             )}
                           </div>
                         )}
+                        {h.recurring && <div style={{ fontSize: 11, color: PALETTE.textSecondary, marginTop: 6 }}>Recorrente (anual)</div>}
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* Vacations section */}
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                     <span style={{ fontSize: 16 }}>🏖️</span>
@@ -639,7 +620,6 @@ export default function VacationsPage() {
                   })}
                 </div>
 
-                {/* Summary info */}
                 {dayVacs.length > 0 && (
                   <div style={{
                     padding: '12px 14px', background: PALETTE.backgroundSecondary, borderRadius: 8,
@@ -654,7 +634,6 @@ export default function VacationsPage() {
                 )}
               </div>
 
-              {/* Footer with action */}
                 {isAdmin && (
                 <div style={{ padding: '16px 24px', borderTop: `1px solid ${PALETTE.border}`, background: PALETTE.backgroundSecondary }}>
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -690,7 +669,6 @@ export default function VacationsPage() {
         )
       })()}
 
-      {/* Modal: Create Holiday (from day detail) */}
       {showCreateHoliday && (
         <div style={{ position: 'fixed', inset: 0, background: '#00000066', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}
           onClick={e => { if (e.target === e.currentTarget) setShowCreateHoliday(false) }}>
@@ -725,7 +703,6 @@ export default function VacationsPage() {
         </div>
       )}
 
-      {/* Modal: Feriados */}
       {showHolidaysModal && (
         <div style={{ position: 'fixed', inset: 0, background: '#000000aa', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
           onClick={e => { if (e.target === e.currentTarget) { setShowHolidaysModal(false) } }}>
@@ -741,9 +718,6 @@ export default function VacationsPage() {
     </main>
   )
 
-  /* ================================================================
-     TAB: Dashboard
-     ================================================================ */
     function renderDashboard() {
     const sectionHeader = (key: string, icon: string, title: string, color: string) => (
       <div
@@ -761,18 +735,16 @@ export default function VacationsPage() {
       </div>
     )
 
-      // color for anniversary countdown badge
       const colorForAnniv = (d: number | null) => {
         if (d === null) return PALETTE.textDisabled
         if (d === 0) return '#00ff00'
         if (d > 30) return PALETTE.textDisabled
         if (d > 10) return '#9bc4e6'
-        return '#5288b4' // 1-10 days
+        return '#5288b4'
       }
 
     return (
       <div style={{ display: 'flex', gap: 20, alignItems: 'stretch', height: '100%' }}>
-        {/* LEFT – Calendar */}
         <div style={{ ...cardStyle, width: '60%', height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
             <button onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1))} style={btnSmall}>◀</button>
@@ -802,35 +774,54 @@ export default function VacationsPage() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, flex: 1 }}>
             {WEEKDAYS.map(d => (
-              <div key={d} style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: PALETTE.textSecondary, padding: '4px 0' }}>{d}</div>
+              <div
+                key={d}
+                style={{
+                  textAlign: 'center',
+                  padding: '8px 6px',
+                  height: 44,
+                  maxHeight: 44,
+                  borderBottom: `2px solid ${PALETTE.border}`,
+                  background: PALETTE.backgroundSecondary,
+                  fontWeight: 600,
+                  fontSize: 13,
+                  color: PALETTE.textSecondary,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {d}
+              </div>
             ))}
             {calendarDays.map((d, i) => {
               const vacs = vacationsForDate(d.date)
               const hols = holidays.filter(h => isoDate(parseLocalDate(h.date.slice(0, 10))) === isoDate(d.date))
               const isToday = isoDate(d.date) === isoDate(new Date())
-              const isHoliday = hols.length > 0 && d.current
+              const isHoliday = hols.length > 0
+              const isHolidayCurrent = hols.length > 0 && d.current
               const baseBg = !d.current ? PALETTE.notCurrentBg : isToday ? PALETTE.todayBg : PALETTE.cardBg
               return (
-                <div key={i} style={{
-                  minHeight: 90, padding: 0, borderRadius: 6, fontSize: 12,
-                  display: 'flex', flexDirection: 'column',
-                  background: isHoliday
-                    ? 'linear-gradient(135deg, #b8860b22 0%, #daa52044 50%, #b8860b22 100%)'
-                    : baseBg,
-                  border: isToday
-                    ? `2px solid ${PALETTE.primary}`
-                    : isHoliday
-                      ? '1px solid #daa520'
-                      : `1px solid ${PALETTE.border}`,
-                  boxShadow: isHoliday ? '0 0 8px #daa52033, inset 0 0 12px #daa52011' : undefined,
-                  opacity: d.current ? 1 : 0.4,
-                  position: 'relative',
-                  overflow: 'hidden',
-                  cursor: d.current ? 'pointer' : 'default',
-                }}
-                onClick={() => { if (d.current) setSelectedDay(d.date) }}
+                <div
+                  key={i}
+                  style={{
+                    ...cellStyle,
+                    background: isHoliday
+                      ? 'linear-gradient(135deg, #b8860b22 0%, #daa52044 50%, #b8860b22 100%)'
+                      : baseBg,
+                    border: isToday
+                      ? `2px solid ${PALETTE.primary}`
+                      : isHoliday
+                        ? '1px solid #daa520'
+                        : `1px solid ${PALETTE.border}`,
+                    boxShadow: isHoliday ? '0 0 8px #daa52033, inset 0 0 12px #daa52011' : undefined,
+                    opacity: d.current ? 1 : 0.4,
+                    cursor: 'pointer',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-6px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 8px 20px rgba(0,0,0,0.08)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; (e.currentTarget as HTMLElement).style.boxShadow = ''; }}
+                  onClick={() => { setSelectedDay(d.date) }}
                 >
-                  {/* Star badge for holidays */}
                   {isHoliday && (
                     <span
                       onClick={(e) => { e.stopPropagation(); setHolidayModalData(hols) }}
@@ -839,17 +830,16 @@ export default function VacationsPage() {
                         position: 'absolute', right: 3, top: 2, zIndex: 2,
                         fontSize: 17, cursor: 'pointer', lineHeight: 1,
                         filter: 'drop-shadow(0 1px 3px rgba(218,165,32,0.6))',
+                        opacity: d.current ? 1 : 0.6,
                         transition: 'transform 0.2s ease, filter 0.2s ease',
                       }}
                       onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.35) rotate(15deg)'; e.currentTarget.style.filter = 'drop-shadow(0 2px 6px rgba(218,165,32,0.9))' }}
                       onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.filter = 'drop-shadow(0 1px 3px rgba(218,165,32,0.6))' }}
                     >⭐</span>
                   )}
-                  {/* Date number */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px 6px 2px' }}>
                     <span style={{ fontWeight: 600, fontSize: 20, color: isHoliday ? '#daa520' : undefined }}>{d.date.getDate()}</span>
                   </div>
-                  {/* Holiday name label */}
                   {isHoliday && hols.map(h => (
                     <div key={`h-${h.id}`} title={h.name} style={{
                       fontSize: 11, fontWeight: 700, padding: '1px 4px', margin: '0 3px 2px',
@@ -857,9 +847,9 @@ export default function VacationsPage() {
                       background: '#FF6A00', color: '#ffffff',
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                       letterSpacing: '0.03em', textTransform: 'uppercase',
+                      opacity: d.current ? 1 : 0.65,
                     }}>{h.name}</div>
                   ))}
-                  {/* Vacations */}
                   <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2, padding: '2px 4px 4px', marginTop: 'auto' }}>
                     {vacs.slice(0, 2).map((v, idx) => {
                       const w = workers.find(w => w.id === v.workerId)
@@ -897,133 +887,123 @@ export default function VacationsPage() {
           </div>
         </div>
 
-        {/* RIGHT – collapsible panels */}
         <div style={{ width: '40%', height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
-
-          {/* Row: Pendentes + Próximas side by side */}
           <div style={{ display: 'flex', gap: 12 }}>
-
-          {/* Férias Pendentes */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {sectionHeader('pending', '⏳', 'Férias Pendentes', PALETTE.warning)}
-            <div style={{
-              ...cardStyle,
-              borderTop: 'none',
-              borderRadius: expanded.pending ? '0 0 8px 8px' : 8,
-              maxHeight: expanded.pending ? 220 : 0,
-              overflowY: 'auto',
-              transition: 'max-height 320ms cubic-bezier(.2,.9,.2,1), opacity 200ms ease',
-              opacity: expanded.pending ? 1 : 0,
-            }}>
-              {pendingWorkers.length === 0 && <p style={{ color: PALETTE.textDisabled, margin: 0, fontSize: 13 }}>Nenhum saldo pendente</p>}
-              {pendingWorkers.map(s => (
-                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
-                  <span style={{ width: 12, height: 12, borderRadius: '50%', background: s.color || PALETTE.border, flexShrink: 0 }} />
-                  <div style={{ flex: 1, fontSize: 13, minWidth: 0 }}>
-                    <strong style={{ display: 'block', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</strong>
-                  </div>
-                  <span style={{ fontWeight: 700, color: PALETTE.warning, fontSize: 13 }}>{s.pendingDays}d</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Agendamento de férias */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {sectionHeader('upcoming', '📅', 'Agendamento de férias', PALETTE.info)}
-            <div style={{
-              ...cardStyle,
-              borderTop: 'none',
-              borderRadius: expanded.upcoming ? '0 0 8px 8px' : 8,
-              maxHeight: expanded.upcoming ? 220 : 0,
-              overflowY: 'auto',
-              transition: 'max-height 320ms cubic-bezier(.2,.9,.2,1), opacity 200ms ease',
-              opacity: expanded.upcoming ? 1 : 0,
-            }}>
-              {upcomingAll.length === 0 && <p style={{ color: PALETTE.textDisabled, margin: 0, fontSize: 13 }}>Nenhuma férias agendada</p>}
-              {upcomingAll.map((v: any) => (
-                <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
-                  <span style={{ width: 12, height: 12, borderRadius: '50%', background: v.workerColor || PALETTE.border, flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <strong style={{ fontSize: 13, display: 'block', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.workerName}</strong>
-                    <div style={{ fontSize: 11, color: PALETTE.textSecondary }}>
-                      {fmtDate(v.startDate)} — {fmtDate(v.endDate)} ({v.daysUsed}d)
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {sectionHeader('pending', '⏳', 'Férias Pendentes', PALETTE.warning)}
+              <div style={{
+                ...cardStyle,
+                borderTop: 'none',
+                borderRadius: expanded.pending ? '0 0 8px 8px' : 8,
+                maxHeight: expanded.pending ? 220 : 0,
+                overflowY: 'auto',
+                transition: 'max-height 320ms cubic-bezier(.2,.9,.2,1), opacity 200ms ease',
+                opacity: expanded.pending ? 1 : 0,
+              }}>
+                {pendingWorkers.length === 0 && <p style={{ color: PALETTE.textDisabled, margin: 0, fontSize: 13 }}>Nenhum saldo pendente</p>}
+                {pendingWorkers.map(s => (
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
+                    <span style={{ width: 12, height: 12, borderRadius: '50%', background: s.color || PALETTE.border, flexShrink: 0 }} />
+                    <div style={{ flex: 1, fontSize: 13, minWidth: 0 }}>
+                      <strong style={{ display: 'block', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</strong>
                     </div>
+                    <span style={{ fontWeight: 700, color: PALETTE.warning, fontSize: 13 }}>{s.pendingDays}d</span>
                   </div>
-                  {isAdmin && <button onClick={() => startEdit(v)} style={btnSmall}>Editar</button>}
-                </div>
-              ))}
+                ))}
+              </div>
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {sectionHeader('upcoming', '📅', 'Agendamento de férias', PALETTE.info)}
+              <div style={{
+                ...cardStyle,
+                borderTop: 'none',
+                borderRadius: expanded.upcoming ? '0 0 8px 8px' : 8,
+                maxHeight: expanded.upcoming ? 220 : 0,
+                overflowY: 'auto',
+                transition: 'max-height 320ms cubic-bezier(.2,.9,.2,1), opacity 200ms ease',
+                opacity: expanded.upcoming ? 1 : 0,
+              }}>
+                {upcomingAll.length === 0 && <p style={{ color: PALETTE.textDisabled, margin: 0, fontSize: 13 }}>Nenhuma férias agendada</p>}
+                {upcomingAll.map((v: any) => (
+                  <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
+                    <span style={{ width: 12, height: 12, borderRadius: '50%', background: v.workerColor || PALETTE.border, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <strong style={{ fontSize: 13, display: 'block', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.workerName}</strong>
+                      <div style={{ fontSize: 11, color: PALETTE.textSecondary }}>
+                        {fmtDate(v.startDate)} — {fmtDate(v.endDate)} ({v.daysUsed}d)
+                      </div>
+                    </div>
+                    {isAdmin && <button onClick={() => startEdit(v)} style={btnSmall}>Editar</button>}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
-          </div>
-
-          {/* Row: Tempo de Casa + Próximas Férias */}
           <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
 
-          {/* Tempo de Casa */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            {sectionHeader('tenure', '🏢', 'Tempo de Casa', PALETTE.success)}
-            <div style={{
-              ...cardStyle,
-              borderTop: 'none',
-              borderRadius: expanded.tenure ? '0 0 8px 8px' : 8,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-              maxHeight: expanded.tenure ? 340 : 0,
-              overflowY: 'auto',
-              transition: 'max-height 360ms cubic-bezier(.2,.9,.2,1), opacity 220ms ease',
-              opacity: expanded.tenure ? 1 : 0,
-              flex: 1,
-            }}>
-              {filteredSummary.length === 0 && <p style={{ color: PALETTE.textDisabled, margin: 0, fontSize: 13 }}>Nenhum trabalhador ativo</p>}
-              {filteredSummary.slice().sort((a, b) => {
-                  const aMs = a.hireDate ? (nowTick - new Date(a.hireDate).getTime()) : Number.NEGATIVE_INFINITY
-                  const bMs = b.hireDate ? (nowTick - new Date(b.hireDate).getTime()) : Number.NEGATIVE_INFINITY
-                  if (bMs !== aMs) return bMs - aMs
-                  return a.name.localeCompare(b.name)
-                }).map(s => {
-                  const daysLeft = daysUntilNextVacation(s.hireDate)
-                  const nextVacationDate = (() => {
-                    if (!s.hireDate) return null
-                    const h = new Date(s.hireDate)
-                    const now = new Date()
-                    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-                    let anniv = new Date(now.getFullYear(), h.getUTCMonth(), h.getUTCDate())
-                    if (anniv.getTime() - today.getTime() < 0) anniv = new Date(now.getFullYear() + 1, h.getUTCMonth(), h.getUTCDate())
-                    return fmtDate(isoDate(anniv))
-                  })()
-                  const showBadge = daysLeft !== null && daysLeft <= 30
-                  return (
-                    <div key={s.id} style={{
-                      display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
-                      background: PALETTE.backgroundSecondary, borderRadius: 6, border: `1px solid ${PALETTE.border}`,
-                    }}>
-                      <span style={{ width: 14, height: 14, borderRadius: '50%', background: s.color || PALETTE.border, flexShrink: 0 }} />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <strong style={{ fontSize: 13, display: 'block', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</strong>
-                        <div style={{ fontSize: 12, color: PALETTE.textSecondary }}>
-                          {s.hireDate ? (
-                            <strong style={{ color: PALETTE.success }}>{tenureFull(s.hireDate, nowTick)}</strong>
-                          ) : (
-                            <span style={{ color: PALETTE.textDisabled }}>Sem data</span>
-                          )}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              {sectionHeader('tenure', '🏢', 'Tempo de Casa', PALETTE.success)}
+              <div style={{
+                ...cardStyle,
+                borderTop: 'none',
+                borderRadius: expanded.tenure ? '0 0 8px 8px' : 8,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                maxHeight: expanded.tenure ? 340 : 0,
+                overflowY: 'auto',
+                transition: 'max-height 360ms cubic-bezier(.2,.9,.2,1), opacity 220ms ease',
+                opacity: expanded.tenure ? 1 : 0,
+                flex: 1,
+              }}>
+                {filteredSummary.length === 0 && <p style={{ color: PALETTE.textDisabled, margin: 0, fontSize: 13 }}>Nenhum trabalhador ativo</p>}
+                {filteredSummary.slice().sort((a, b) => {
+                    const aMs = a.hireDate ? (nowTick - new Date(a.hireDate).getTime()) : Number.NEGATIVE_INFINITY
+                    const bMs = b.hireDate ? (nowTick - new Date(b.hireDate).getTime()) : Number.NEGATIVE_INFINITY
+                    if (bMs !== aMs) return bMs - aMs
+                    return a.name.localeCompare(b.name)
+                  }).map(s => {
+                    const daysLeft = daysUntilNextVacation(s.hireDate)
+                    const nextVacationDate = (() => {
+                      if (!s.hireDate) return null
+                      const h = new Date(s.hireDate)
+                      const now = new Date()
+                      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                      let anniv = new Date(now.getFullYear(), h.getUTCMonth(), h.getUTCDate())
+                      if (anniv.getTime() - today.getTime() < 0) anniv = new Date(now.getFullYear() + 1, h.getUTCMonth(), h.getUTCDate())
+                      return fmtDate(isoDate(anniv))
+                    })()
+                    const showBadge = daysLeft !== null && daysLeft <= 30
+                    return (
+                      <div key={s.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+                        background: PALETTE.backgroundSecondary, borderRadius: 6, border: `1px solid ${PALETTE.border}`,
+                      }}>
+                        <span style={{ width: 14, height: 14, borderRadius: '50%', background: s.color || PALETTE.border, flexShrink: 0 }} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <strong style={{ fontSize: 13, display: 'block', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</strong>
+                          <div style={{ fontSize: 12, color: PALETTE.textSecondary }}>
+                            {s.hireDate ? (
+                              <strong style={{ color: PALETTE.success }}>{tenureFull(s.hireDate, nowTick)}</strong>
+                            ) : (
+                              <span style={{ color: PALETTE.textDisabled }}>Sem data</span>
+                            )}
+                          </div>
                         </div>
+                        {showBadge && (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: colorForAnniv(daysLeft) }}>{daysLeft}</div>
+                            <div style={{ fontSize: 10, color: PALETTE.textSecondary }}>dias</div>
+                          </div>
+                        )}
                       </div>
-                      {showBadge && (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: colorForAnniv(daysLeft) }}>{daysLeft}</div>
-                          <div style={{ fontSize: 10, color: PALETTE.textSecondary }}>dias</div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-          </div>
+                    )
+                  })}
+                </div>
+            </div>
 
-          {/* Dias para Próximas Férias */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             {sectionHeader('nextVac', '⏱️', 'Dias p/ Próximas Férias', PALETTE.info)}
             <div style={{
@@ -1098,9 +1078,6 @@ export default function VacationsPage() {
     )
   }
 
-  /* ================================================================
-     TAB: Agendar
-     ================================================================ */
   function renderSchedule() {
     return (
       <div>
@@ -1156,7 +1133,6 @@ export default function VacationsPage() {
           </div>
         </div>
 
-        {/* Quick summary of selected worker */}
         {formWorkerId && (() => {
           const s = summary.find(s => s.id === formWorkerId)
           if (!s) return null
@@ -1177,9 +1153,6 @@ export default function VacationsPage() {
     )
   }
 
-  /* ================================================================
-     TAB: Lançamentos
-     ================================================================ */
   function renderList() {
     return (
       <div>

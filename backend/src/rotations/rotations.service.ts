@@ -9,17 +9,12 @@ function toUTCMidnight(value: Date | string): Date {
   return new Date(s);
 }
 
-/** Retorna o domingo (início) da semana UTC de uma data */
 function weekStartUTC(d: Date): Date {
   const copy = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   copy.setUTCDate(copy.getUTCDate() - copy.getUTCDay());
   return copy;
 }
 
-/**
- * Calcula qual trabalhador está escalado para uma data,
- * dado um rodízio com startDate e workerIds ordenados.
- */
 export function workerForDate(
   rotation: { startDate: Date | string; workerIds: number[] },
   date: Date,
@@ -97,24 +92,22 @@ export class RotationsService {
     return this.prisma.rotation.delete({ where: { id } });
   }
 
-  /**
-   * Calcula o calendário de um intervalo de datas combinando rodízios + overrides manuais.
-   * Retorna um mapa { "YYYY-MM-DD": { entries: [...], holiday? } }
-   * Cada dia pode ter múltiplos trabalhadores.
-   */
-  async calendar(startDate: string, endDate: string) {
+  async calendar(startDate: string, endDate: string, includeInactive = false) {
     const start = toUTCMidnight(startDate);
     const end = toUTCMidnight(endDate);
 
-    const [rotations, assignments, workers, holidays] = await Promise.all([
+    const [rotations, assignments, holidays] = await Promise.all([
       this.prisma.rotation.findMany(),
       this.prisma.assignment.findMany({
         where: { date: { gte: start, lte: end } },
         orderBy: { date: 'asc' },
       }),
-      this.prisma.worker.findMany(),
       this.prisma.holiday.findMany(),
     ]);
+
+    const workers = includeInactive
+      ? await this.prisma.worker.findMany()
+      : await this.prisma.worker.findMany({ where: { active: true } });
 
     const workerMap = new Map<number, { name: string; color: string | null }>(workers.map((w) => [w.id, { name: w.name, color: w.color }]));
 
@@ -151,7 +144,6 @@ export class RotationsService {
       return result[iso];
     };
 
-    // Pré-popula feriados no resultado
     for (
       let d = new Date(start);
       d <= end;
@@ -173,7 +165,6 @@ export class RotationsService {
       }
     }
 
-    // 1) preenche com rodízios
     for (
       let d = new Date(start);
       d <= end;
@@ -189,7 +180,6 @@ export class RotationsService {
         if (!rot.weekdays.includes(weekday)) continue;
         const rotStart = new Date(rot.startDate);
         if (d < rotStart) continue;
-        // Se o rodízio tem endDate, não considerar após essa data
         if (rot.endDate && d > new Date(rot.endDate)) continue;
         if (!chosen || rotStart > new Date(chosen.startDate)) {
           chosen = rot;
@@ -214,8 +204,6 @@ export class RotationsService {
       }
     }
 
-    // 2) overrides manuais: substituem entradas de rodízio para o mesmo trabalhador
-    //    ou adicionam novos trabalhadores ao dia
     const manualByDate = new Map<string, typeof assignments>();
     for (const a of assignments) {
       const iso = new Date(a.date).toISOString().slice(0, 10);
@@ -226,7 +214,6 @@ export class RotationsService {
     for (const [iso, dayAssignments] of manualByDate) {
       if (!dayAssignments.some((a) => a.source === 'MANUAL')) continue;
       const day = ensureDay(iso);
-      // Remove entradas de rodízio — overrides manuais têm prioridade total
       day.entries = day.entries.filter((e) => e.source !== 'ROTATION');
       for (const a of dayAssignments) {
         if (a.source === 'MANUAL') {
@@ -245,17 +232,13 @@ export class RotationsService {
     return result;
   }
 
-  /**
-   * Gera relatório de quantidade de plantões por trabalhador em um período,
-   * opcionalmente filtrando por dias da semana.
-   */
   async report(
     startDate: string,
     endDate: string,
     weekdays?: number[],
+    includeInactive = false,
   ) {
-    // Reutiliza o calendário já calculado (respeita overrides manuais)
-    const calendarData = await this.calendar(startDate, endDate);
+    const calendarData = await this.calendar(startDate, endDate, includeInactive);
 
     type WorkerStats = {
       workerId: number;
@@ -271,7 +254,6 @@ export class RotationsService {
       const d = new Date(`${dateKey}T00:00:00Z`);
       const isHoliday = !!day.holiday;
 
-      // filtra por dias da semana se informados, mas sempre inclui feriados
       if (weekdays && weekdays.length > 0 && !isHoliday) {
         if (!weekdays.includes(d.getUTCDay())) continue;
       }

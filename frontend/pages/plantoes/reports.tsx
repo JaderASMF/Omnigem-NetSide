@@ -48,6 +48,7 @@ export function ReportsContent({ onClose }: { onClose?: () => void } = {}) {
   const [report, setReport] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [includeInactive, setIncludeInactive] = useState(false)
 
   function toggleWeekday(wd: number) {
     setSelectedWeekdays((prev) =>
@@ -68,8 +69,9 @@ export function ReportsContent({ onClose }: { onClose?: () => void } = {}) {
 
     try {
       const wdParam = selectedWeekdays.join(',')
+      const incParam = includeInactive ? '&includeInactive=true' : ''
       const res = await fetch(
-        `${API_BASE}/rotations/report?startDate=${startDate}&endDate=${endDate}&weekdays=${wdParam}`,
+        `${API_BASE}/rotations/report?startDate=${startDate}&endDate=${endDate}&weekdays=${wdParam}${incParam}`,
       )
       if (!res.ok) {
         setError('Erro ao gerar relatório.')
@@ -213,17 +215,30 @@ export function ReportsContent({ onClose }: { onClose?: () => void } = {}) {
                 </button>
               </div>
 
-              <div>
-                <button
-                  onClick={generateReport}
-                  disabled={loading}
-                  style={{ ...btnPrimary, opacity: loading ? 0.6 : 1 }}
-                >
-                  {loading ? 'Gerando...' : 'Gerar Relatório'}
-                </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <button
+                    onClick={generateReport}
+                    disabled={loading}
+                    style={{ ...btnPrimary, opacity: loading ? 0.6 : 1 }}
+                  >
+                    {loading ? 'Gerando...' : 'Gerar Relatório'}
+                  </button>
+                </div>
+
+                <div style={{ marginLeft: 'auto' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={includeInactive}
+                      onChange={(e) => setIncludeInactive(e.target.checked)}
+                    />
+                    <span style={{ color: PALETTE.textSecondary, fontSize: 13 }}>Incluir trabalhadores inativos</span>
+                  </label>
+                </div>
               </div>
             </div>
-
+            
             {error && (
               <div style={{ marginTop: 12, color: PALETTE.error, fontSize: 13 }}>{error}</div>
             )}

@@ -46,8 +46,10 @@ export class RotationsController {
   calendar(
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Query('includeInactive') includeInactive?: string,
   ) {
-    return this.svc.calendar(startDate, endDate);
+    const inc = includeInactive === 'true';
+    return this.svc.calendar(startDate, endDate, inc);
   }
 
   @Get('report')
@@ -55,11 +57,13 @@ export class RotationsController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
     @Query('weekdays') weekdays?: string,
+    @Query('includeInactive') includeInactive?: string,
   ) {
     const wd = weekdays
       ? weekdays.split(',').map((n) => parseInt(n, 10))
       : undefined;
-    return this.svc.report(startDate, endDate, wd);
+    const inc = includeInactive === 'true';
+    return this.svc.report(startDate, endDate, wd, inc);
   }
 
   @Get(':id')

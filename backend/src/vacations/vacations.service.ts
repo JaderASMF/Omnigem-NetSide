@@ -95,9 +95,9 @@ export class VacationsService {
       // Total de dias acumulados (30 dias por ano trabalhado)
       const totalEarned = yearsWorked * 30;
 
-      // Total de dias já utilizados (apenas lançamentos ativos)
+      // Total de dias já utilizados (apenas lançamentos ativos cujo startDate já chegou)
       const totalUsed = w.vacations
-        .filter(v => v.active)
+        .filter(v => v.active && new Date(v.startDate) <= today)
         .reduce((sum, v) => sum + v.daysUsed, 0);
 
       // Saldo pendente (pode ser negativo se já utilizou mais dias que acumulou)

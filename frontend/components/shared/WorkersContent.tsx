@@ -127,7 +127,8 @@ export default function WorkersContent({ readOnly = false, showTitle = true }: {
     const termination = todayIso()
 
     // If worker already has a terminationDate, do not overwrite it.
-    const payload: any = { active: false }
+    // clear color when marking inactive
+    const payload: any = { active: false, color: null }
 
     try {
       const res = await fetch(`${API_BASE}/workers/${worker.id}`, {
@@ -146,6 +147,8 @@ export default function WorkersContent({ readOnly = false, showTitle = true }: {
       // Se estiver editando este trabalhador no modal, atualiza a data localmente
       if (editingId === worker.id && !worker.terminationDate) {
         setTerminationDate(termination)
+        // clear color in the modal immediately
+        setColor('')
       }
       fetchWorkers()
     } catch (e) {

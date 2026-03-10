@@ -379,6 +379,14 @@ export default function CalendarPage() {
               </select>
             </div>
 
+            <button
+              onClick={() => setViewDate(new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), 1)))}
+              style={{ ...btnNav, minWidth: 72 }}
+              title="Ir para o mês atual"
+            >
+              Hoje
+            </button>
+
             <button onClick={nextMonth} style={btnNav}>Próximo ▶</button>
           </div>
 

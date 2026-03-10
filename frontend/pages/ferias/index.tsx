@@ -770,6 +770,13 @@ export default function VacationsPage() {
                 })()}
               </select>
             </div>
+            <button
+              onClick={() => setCalMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
+              style={{ ...btnSmall, minWidth: 72 }}
+              title="Ir para o mês atual"
+            >
+              Hoje
+            </button>
             <button onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1))} style={btnSmall}>▶</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, flex: 1 }}>

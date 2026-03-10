@@ -161,7 +161,8 @@ export default function CalendarPage() {
 
       for (const e of entries) {
         if (e.notifyUpcoming && e.workerId != null) {
-          const cur = map.get(e.workerId) ?? { name: e.workerName ?? workers.find(w => w.id === e.workerId)?.name ?? null, color: e.workerColor, dates: [] };
+          const w = workers.find(w => w.id === e.workerId) ?? null;
+          const cur = map.get(e.workerId) ?? { name: e.workerName ?? w?.name ?? null, color: e.workerColor, dates: [], inactive: w?.active === false } as any;
           cur.dates.push(iso);
           map.set(e.workerId, cur);
         }
@@ -171,7 +172,8 @@ export default function CalendarPage() {
       if (rot?.notifyUpcoming) {
         const rotEntry = entries.find(en => en.source === 'ROTATION' && en.workerId != null);
         if (rotEntry) {
-          const cur = map.get(rotEntry.workerId!) ?? { name: rotEntry.workerName ?? workers.find(w => w.id === rotEntry.workerId)?.name ?? null, color: rotEntry.workerColor, dates: [] };
+          const w = workers.find(w => w.id === rotEntry.workerId) ?? null;
+          const cur = map.get(rotEntry.workerId!) ?? { name: rotEntry.workerName ?? w?.name ?? null, color: rotEntry.workerColor, dates: [], inactive: w?.active === false } as any;
           cur.dates.push(iso);
           map.set(rotEntry.workerId!, cur);
         }
@@ -289,7 +291,15 @@ export default function CalendarPage() {
                       Dias: {rot.weekdays.map(w => WEEKDAY_LABELS[w]).join(', ')}
                     </div>
                     <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>
-                      Ordem: {rot.workerIds.map(id => workers.find(w => w.id === id)?.name ?? `#${id}`).join(' → ')}
+                      Ordem: {rot.workerIds.map((id, idx) => {
+                        const w = workers.find(w => w.id === id) ?? null;
+                        const name = w?.name ?? '—';
+                        return (
+                          <span key={id} style={{ textDecoration: w?.active === false ? 'line-through' : undefined }}>
+                            {name}{idx < rot.workerIds.length - 1 ? ' → ' : ''}
+                          </span>
+                        );
+                      })}
                     </div>
                     {rot.endDate && (
                       <div style={{ fontSize: 11, color: PALETTE.warning, marginTop: 4 }}>
@@ -316,7 +326,9 @@ export default function CalendarPage() {
                   {upcomingNotifiedThisWeek.map(u => (
                     <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: PALETTE.cardBg, borderRadius: 8, border: `1px solid ${PALETTE.border}` }}>
                       <div style={{ width: 12, height: 12, borderRadius: '50%', background: u.color ?? '#888', flexShrink: 0 }} />
-                      <div style={{ fontSize: 13, color: PALETTE.textPrimary, fontWeight: 600 }}>{u.name ?? `#${u.id}`}</div>
+                          <div style={{ fontSize: 13, color: PALETTE.textPrimary, fontWeight: 600 }}>{u.name ? (
+                            <span style={{ textDecoration: (u as any).inactive ? 'line-through' : undefined }}>{u.name}</span>
+                          ) : '—'}</div>
                       <div style={{ marginLeft: 'auto', fontSize: 12, color: PALETTE.textSecondary }}>{u.dates.length} dia(s)</div>
                     </div>
                   ))}
@@ -518,9 +530,12 @@ export default function CalendarPage() {
                           )}
                           <div style={{ paddingTop: 2, marginTop: 'auto', flexGrow: 0, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column-reverse', gap: 2 }}>
                             {entries.length === 0 ? null : (() => {
-                              const first = entries[0];
-                              const extra = entries.length - 1;
-                              return (
+                                const first = entries[0];
+                                const extra = entries.length - 1;
+                                const firstWorker = first.workerId ? workers.find(w => w.id === first.workerId) : null;
+                                const firstName = first.workerName ?? firstWorker?.name ?? '—';
+                                const firstInactive = firstWorker?.active === false;
+                                return (
                                   <div style={{
                                     padding: '2px 6px',
                                     borderRadius: 4,
@@ -532,11 +547,11 @@ export default function CalendarPage() {
                                     overflow: 'hidden',
                                     flexShrink: 0,
                                   }}>
-                                    <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: PALETTE.textPrimary, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                      <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: PALETTE.textPrimary, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
                                       {first.source === 'MANUAL' && (
                                         <span title="Atribuição manual" style={{ color: PALETTE.success, fontSize: 12, flexShrink: 0 }}>●</span>
                                       )}
-                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{first.workerName ?? first.workerId ?? '—'}</span>
+                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textDecoration: firstInactive ? 'line-through' : undefined }}>{firstName}</span>
                                       {extra > 0 && (
                                         <span style={{ fontSize: 11, color: PALETTE.primary, fontWeight: 700, marginLeft: '8px', marginRight: 2, flexShrink: 0, textAlign: 'right' }}>+{extra}</span>
                                       )}
@@ -635,7 +650,7 @@ export default function CalendarPage() {
               const w = workers.find(x => x.id === wId);
               return (
                 <div key={wId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', marginBottom: 4, background: PALETTE.hoverBg, borderRadius: 6 }}>
-                  <span style={{ fontWeight: 500, color: PALETTE.textPrimary }}>{idx + 1}. {w?.name ?? `#${wId}`}</span>
+                  <span style={{ fontWeight: 500, color: PALETTE.textPrimary, textDecoration: w?.active === false ? 'line-through' : undefined }}>{idx + 1}. {w?.name ?? '—'}</span>
                   <button onClick={() => setEditWorkerIds(ids => ids.filter(id => id !== wId))} style={{ ...btnSmall, color: PALETTE.error, background: `${PALETTE.error}22`, borderColor: PALETTE.error }}>✕</button>
                 </div>
               );
@@ -894,7 +909,11 @@ function DayInfoPanel({ date, dayData, workers, rotations, onClose, isAdmin, onC
                     {entry.source === 'MANUAL' && (
                       <span title="Atribuição manual" style={{ color: PALETTE.success, marginRight: 8, fontSize: 12 }}>●</span>
                     )}
-                    {entry.workerName ?? '—'}
+                    {(() => {
+                      const name = entry.workerName ?? w?.name ?? '—';
+                      const inactive = w?.active === false;
+                      return (typeof name === 'string' && name !== '—') ? <span style={{ textDecoration: inactive ? 'line-through' : undefined }}>{name}</span> : name;
+                    })()}
                   </span>
                   <span style={{
                     fontSize: 10,
@@ -1310,7 +1329,7 @@ function RotationModal({ rotation, workers, onClose, onSaved, scheduleFrom }: {
               const w = workers.find(x => x.id === wId);
               return (
                 <div key={`${wId}-${idx}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', marginBottom: 6, background: PALETTE.hoverBg, borderRadius: 6 }}>
-                  <span style={{ fontWeight: 500, color: PALETTE.textPrimary }}>{idx + 1}. {w?.name ?? `#${wId}`}</span>
+                  <span style={{ fontWeight: 500, color: PALETTE.textPrimary, textDecoration: w?.active === false ? 'line-through' : undefined }}>{idx + 1}. {w?.name ?? '—'}</span>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button disabled={idx === 0} onClick={() => moveUp(idx)} style={btnSmall}>↑</button>
                     <button disabled={idx === workerIds.length - 1} onClick={() => moveDown(idx)} style={btnSmall}>↓</button>

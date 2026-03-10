@@ -109,7 +109,9 @@ export class RotationsService {
       ? await this.prisma.worker.findMany()
       : await this.prisma.worker.findMany({ where: { active: true } });
 
-    const workerMap = new Map<number, { name: string; color: string | null }>(workers.map((w) => [w.id, { name: w.name, color: w.color }]));
+    const workerMap = new Map<number, { name: string; color: string | null; active: boolean }>(
+      workers.map((w) => [w.id, { name: w.name, color: w.color, active: !!w.active }]),
+    );
 
     const isHoliday = (d: Date) =>
       holidays.some((h) => {
@@ -131,6 +133,7 @@ export class RotationsService {
       rotationName?: string;
       note?: string;
       notifyUpcoming?: boolean;
+      inactive?: boolean;
     };
     type DayData = {
       entries: EntryItem[];
@@ -190,15 +193,19 @@ export class RotationsService {
         const wId = workerForDate(chosen, new Date(d));
         if (wId != null) {
           const wInfo = workerMap.get(wId);
+          // If worker info is not present it means the worker is inactive
+          // and `includeInactive` was false -> skip this entry.
+          if (!wInfo) continue;
           const day = ensureDay(iso);
           day.entries.push({
             workerId: wId,
-            workerName: wInfo?.name ?? null,
-            workerColor: wInfo?.color ?? null,
+            workerName: wInfo.name ?? null,
+            workerColor: wInfo.color ?? null,
             source: 'ROTATION',
             rotationId: chosen.id,
             rotationName: chosen.name ?? undefined,
             notifyUpcoming: (chosen as any).notifyUpcoming ?? false,
+              inactive: wInfo.active === false,
           });
         }
       }
@@ -217,14 +224,18 @@ export class RotationsService {
       day.entries = day.entries.filter((e) => e.source !== 'ROTATION');
       for (const a of dayAssignments) {
         if (a.source === 'MANUAL') {
-          const wInfo = a.workerId ? workerMap.get(a.workerId) : undefined;
-          day.entries.push({
-            workerId: a.workerId,
-            workerName: wInfo?.name ?? null,
-            workerColor: wInfo?.color ?? null,
-            source: 'MANUAL',
-            note: a.note ?? undefined,
-          });
+            // If assignment references an inactive worker and includeInactive is false,
+            // that worker won't be present in workerMap — skip the entry.
+            if (a.workerId && !workerMap.has(a.workerId)) continue;
+            const wInfo = a.workerId ? workerMap.get(a.workerId) : undefined;
+            day.entries.push({
+              workerId: a.workerId,
+              workerName: wInfo?.name ?? null,
+              workerColor: wInfo?.color ?? null,
+              source: 'MANUAL',
+              note: a.note ?? undefined,
+              inactive: wInfo?.active === false,
+            });
         }
       }
     }
@@ -246,6 +257,7 @@ export class RotationsService {
       workerColor: string | null;
       total: number;
       holidays: number;
+      inactive?: boolean;
     };
 
     const statsMap = new Map<number, WorkerStats>();
@@ -269,6 +281,7 @@ export class RotationsService {
             workerColor: entry.workerColor ?? null,
             total: 0,
             holidays: 0,
+            inactive: (entry as any).inactive === true,
           };
           statsMap.set(entry.workerId, stat);
         }

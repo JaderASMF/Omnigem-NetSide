@@ -24,6 +24,7 @@ type WorkerStats = {
   workerColor: string | null
   total: number
   holidays: number
+  inactive?: boolean
 }
 
 type ReportData = {
@@ -303,46 +304,49 @@ export function ReportsContent({ onClose }: { onClose?: () => void } = {}) {
                       <span style={{ textAlign: 'center' }}>Em Feriados</span>
                     </div>
 
-                    {report.workers.map((w) => (
-                      <div
-                        key={w.workerId}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 120px 120px',
-                          gap: 12,
-                          alignItems: 'center',
-                          padding: '10px 14px',
-                          background: PALETTE.cardBg,
-                          borderRadius: 8,
-                          border: `1px solid ${PALETTE.border}`,
-                          borderLeft: w.workerColor
-                            ? `4px solid ${w.workerColor}`
-                            : `4px solid ${PALETTE.border}`,
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <span
-                            style={{
-                              width: 20,
-                              height: 20,
-                              borderRadius: '50%',
-                              background: w.workerColor || PALETTE.border,
-                              display: 'inline-block',
-                              flexShrink: 0,
-                            }}
-                          />
-                          <strong style={{ color: PALETTE.textPrimary, fontSize: 14 }}>
-                            {w.workerName}
-                          </strong>
+                    {report.workers.map((w) => {
+                      const isInactive = !!((w as any).inactive === true || (w as any).active === false || (w as any).isActive === false)
+                      return (
+                        <div
+                          key={w.workerId}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 120px 120px',
+                            gap: 12,
+                            alignItems: 'center',
+                            padding: '10px 14px',
+                            background: PALETTE.cardBg,
+                            borderRadius: 8,
+                            border: `1px solid ${PALETTE.border}`,
+                            borderLeft: w.workerColor
+                              ? `4px solid ${w.workerColor}`
+                              : `4px solid ${PALETTE.border}`,
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span
+                              style={{
+                                width: 20,
+                                height: 20,
+                                borderRadius: '50%',
+                                background: w.workerColor || PALETTE.border,
+                                display: 'inline-block',
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontWeight: 500, fontSize: 14, color: PALETTE.textPrimary, textDecoration: isInactive ? 'line-through' : undefined }}>
+                              {w.workerName}
+                            </span>
+                          </div>
+                          <div style={{ textAlign: 'center', fontWeight: 600, fontSize: 16, color: PALETTE.textPrimary }}>
+                            {w.total}
+                          </div>
+                          <div style={{ textAlign: 'center', fontWeight: 600, fontSize: 16, color: w.holidays > 0 ? PALETTE.warning : PALETTE.textSecondary }}>
+                            {w.holidays}
+                          </div>
                         </div>
-                        <div style={{ textAlign: 'center', fontWeight: 600, fontSize: 16, color: PALETTE.textPrimary }}>
-                          {w.total}
-                        </div>
-                        <div style={{ textAlign: 'center', fontWeight: 600, fontSize: 16, color: w.holidays > 0 ? PALETTE.warning : PALETTE.textSecondary }}>
-                          {w.holidays}
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
 

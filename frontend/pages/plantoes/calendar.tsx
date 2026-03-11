@@ -141,9 +141,10 @@ export default function CalendarPage() {
     const e = toISO(gridEnd);
     try {
       const r = await fetch(`${API}/rotations/calendar?startDate=${s}&endDate=${e}`);
-      setCalendar(await r.json());
+      const fetched = await r.json();
+      setCalendar(prev => ({ ...prev, ...fetched }));
     } catch {
-      setCalendar({});
+      // preserve existing calendar data on error to avoid clearing notifications
     }
   }, []);
 

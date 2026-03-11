@@ -14,8 +14,8 @@ async function main() {
   const hashed = await bcrypt.hash(adminPassword, 10);
   await prisma.user.upsert({
     where: { email: adminEmail },
-    update: { password: hashed, role: 'ADMIN' },
-    create: { email: adminEmail, password: hashed, role: 'ADMIN', name: 'Administrator' },
+    update: { password: hashed, roles: ['ADMIN'] },
+    create: { email: adminEmail, password: hashed, roles: ['ADMIN'], name: 'Administrator' },
   });
 
   console.log(`Seeded admin: ${adminEmail} (password from ADMIN_PASSWORD env or 'admin123')`);

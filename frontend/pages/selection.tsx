@@ -1,11 +1,22 @@
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { PALETTE, btnPrimary, btnCancel } from '../styles/theme'
 
 export default function Selection() {
   const router = useRouter()
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    try {
+      const roles = JSON.parse(localStorage.getItem('plantoes_roles') || '[]')
+      setIsAdmin(Array.isArray(roles) && roles.includes('ADMIN'))
+    } catch { setIsAdmin(false) }
+  }, [])
+
   const handleLogout = () => {
     try {
-      localStorage.removeItem('token')
+      localStorage.removeItem('plantoes_token')
+      localStorage.removeItem('plantoes_roles')
     } catch (e) {}
     router.push('/login')
   }
@@ -35,6 +46,11 @@ export default function Selection() {
           <button onClick={() => router.push('/plantoes')} style={{ ...btnPrimary, flex: 1 }}>Plantões</button>
           <button onClick={() => router.push('/ferias')} style={{ ...btnPrimary, flex: 1 }}>Férias</button>
         </div>
+        {isAdmin && (
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 12 }}>
+            <button onClick={() => router.push('/usuarios')} style={{ ...btnPrimary, flex: 1 }}>Gerenciar Usuários</button>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 16 }}>
           <button onClick={handleLogout} style={{ ...btnCancel, flex: 1 }}>Sair</button>
         </div>

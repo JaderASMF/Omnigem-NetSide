@@ -59,8 +59,10 @@ export default function CalendarPage() {
   });
   const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
-    const role = typeof window !== 'undefined' ? localStorage.getItem('plantoes_role') : null;
-    setIsAdmin(role === 'ADMIN');
+    try {
+      const roles = JSON.parse(localStorage.getItem('plantoes_roles') || '[]');
+      setIsAdmin(Array.isArray(roles) && roles.includes('ADMIN'));
+    } catch { setIsAdmin(false); }
   }, []);
   const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const [selMonth, setSelMonth] = useState<number>(viewDate.getUTCMonth());

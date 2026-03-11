@@ -33,13 +33,14 @@ export default function DashboardLayout({ initialTab, dashboardContent }: {
 
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('plantoes_token') : null
-    const storedRole = typeof window !== 'undefined' ? localStorage.getItem('plantoes_role') : null
-    // Allow guest access (empty token) but require that role is set
-    if (token === null && storedRole === null) {
+    let storedRoles: string[] = []
+    try { storedRoles = JSON.parse(localStorage.getItem('plantoes_roles') || '[]') } catch {}
+    // Allow guest access (empty token) but require that roles are set
+    if (token === null && storedRoles.length === 0) {
       router.push('/login')
       return
     }
-    setRole(storedRole === 'ADMIN' ? 'admin' : 'guest')
+    setRole(Array.isArray(storedRoles) && storedRoles.includes('ADMIN') ? 'admin' : 'guest')
   }, [router])
 
   useEffect(() => {
@@ -51,7 +52,7 @@ export default function DashboardLayout({ initialTab, dashboardContent }: {
 
   function logout() {
     localStorage.removeItem('plantoes_token')
-    localStorage.removeItem('plantoes_role')
+    localStorage.removeItem('plantoes_roles')
     router.push('/login')
   }
 

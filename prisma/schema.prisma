@@ -11,13 +11,15 @@ datasource db {
 enum Role {
   ADMIN
   GUEST
+  TRAVELER
+  SPED_MANAGER
 }
 
 model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
   password  String?
-  role      Role     @default(GUEST)
+  roles     Role[]   @default([GUEST])
   name      String?
   createdAt DateTime @default(now())
 }
@@ -104,4 +106,45 @@ model Vacation {
   active    Boolean  @default(true)  // Lançamento ativo?
   note      String?  // Observações
   createdAt DateTime @default(now())
+}
+
+model Sped {
+  id               Int       @id @default(autoincrement())
+  company          String
+  note             String?
+  bankAccountStatus Int    // 0 - Aguardando retorno; 1 - Não solicitado; 2 - Configurados; 3 - Aguardando Configurar
+  accountingSheetStatus Int?  // 0 - Aguardando retorno; 1 - Não solicitado; 2 - Configurados; 3 - Aguardando Configurar
+  icmsIpi          Boolean?
+  pisCofins        Boolean?
+  regime           Int?    // 0 - PRESUMIDO (Cumulativo); 1 - REAL (Não Cumulativo)
+  contactAttempts  Int?    // 0 - Registrando Notas; 1 - Em Contato; 2 - Não Gera; 3 - Feito/Concluído
+  lastSent         DateTime?
+  reference        String?
+  sendingEmails    String[]
+  accessContact    String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model Trip {
+  id                    Int      @id @default(autoincrement())
+  destination           String
+  vehicle               String?
+  date                  DateTime
+  client                String?
+  installationTraining  String?
+  mealExpense           Float?   @default(0)
+  fuelExpense           Float?   @default(0)
+  extraExpense          Float?   @default(0)
+  total                 Float?   @default(0)
+  kmDriven              Float?   @default(0)
+  costPerKm             Float?   @default(0)
+  profitPerKm           Float?   @default(0)
+  avgConsumption        Float?
+  remainingAutonomy     Float?
+  travelers             Int?
+  drivers               String?
+  notes                 String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }

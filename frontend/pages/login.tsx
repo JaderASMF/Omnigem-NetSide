@@ -27,7 +27,7 @@ export default function Login() {
       }
       const data = await res.json()
       localStorage.setItem('plantoes_token', data.accessToken)
-      localStorage.setItem('plantoes_role', data.role)
+      localStorage.setItem('plantoes_roles', JSON.stringify(data.roles))
       router.push('/selection')
     } catch (err) {
       setError('Erro de conexão com o servidor')
@@ -38,7 +38,7 @@ export default function Login() {
 
   function handleGuestAccess() {
     localStorage.setItem('plantoes_token', '')
-    localStorage.setItem('plantoes_role', 'GUEST')
+    localStorage.setItem('plantoes_roles', JSON.stringify(['GUEST']))
     router.push('/selection')
   }
 

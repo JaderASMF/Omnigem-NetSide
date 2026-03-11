@@ -179,7 +179,10 @@ export default function VacationsPage() {
   function toggleSection(key: string) { setExpanded(prev => ({ ...prev, [key]: !prev[key] })) }
 
   useEffect(() => {
-    setIsAdmin(localStorage.getItem('plantoes_role') === 'ADMIN')
+    try {
+      const roles = JSON.parse(localStorage.getItem('plantoes_roles') || '[]')
+      setIsAdmin(Array.isArray(roles) && roles.includes('ADMIN'))
+    } catch { setIsAdmin(false) }
     load()
   }, [])
 

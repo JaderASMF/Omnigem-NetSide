@@ -20,7 +20,7 @@ export class JwtAuthGuard implements CanActivate {
     const token = authHeader.replace(/^Bearer\s+/i, '');
     try {
       const payload = jwt.verify(token, JWT_SECRET);
-      request.user = payload; // { sub, email, role }
+      request.user = payload; // { sub, email, roles }
       return true;
     } catch {
       throw new UnauthorizedException('Token inválido ou expirado');

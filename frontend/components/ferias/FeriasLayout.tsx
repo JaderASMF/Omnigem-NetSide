@@ -26,13 +26,14 @@ export default function FeriasLayout({
   const [role, setRole] = useState<string | null>(null)
 
   useEffect(() => {
-    const storedRole = typeof window !== 'undefined' ? localStorage.getItem('plantoes_role') : null
-    setRole(storedRole === 'ADMIN' ? 'admin' : 'guest')
+    let storedRoles: string[] = []
+    try { storedRoles = JSON.parse(localStorage.getItem('plantoes_roles') || '[]') } catch {}
+    setRole(Array.isArray(storedRoles) && storedRoles.includes('ADMIN') ? 'admin' : 'guest')
   }, [])
 
   function logout() {
     localStorage.removeItem('plantoes_token')
-    localStorage.removeItem('plantoes_role')
+    localStorage.removeItem('plantoes_roles')
     router.push('/login')
   }
 

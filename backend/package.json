@@ -5,6 +5,7 @@
   "scripts": {
     "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "backup": "ts-node-dev --respawn --transpile-only scripts/backup.ts",
+    "restore": "ts-node-dev --respawn --transpile-only scripts/restore.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate --schema=../prisma/schema.prisma",

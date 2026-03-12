@@ -9,7 +9,8 @@ class CreateTripDto {
   vehicleId?: number
   date!: string
   client?: string
-  installationTraining?: number
+  serviceTypeId!: number
+  price?: number
   mealExpense?: number
   fuelExpense?: number
   extraExpense?: number
@@ -19,8 +20,10 @@ class CreateTripDto {
   profitPerKm?: number
   avgConsumption?: number
   remainingAutonomy?: number
+  completed?: boolean
+  endDate?: string
   travelerIds?: number[]
-  driverId?: number
+  driverIds?: number[]
   note?: string
 }
 
@@ -29,7 +32,8 @@ class UpdateTripDto {
   vehicleId?: number
   date?: string
   client?: string
-  installationTraining?: number
+  serviceTypeId?: number
+  price?: number
   mealExpense?: number
   fuelExpense?: number
   extraExpense?: number
@@ -39,8 +43,10 @@ class UpdateTripDto {
   profitPerKm?: number
   avgConsumption?: number
   remainingAutonomy?: number
+  completed?: boolean
+  endDate?: string
   travelerIds?: number[]
-  driverId?: number
+  driverIds?: number[]
   note?: string
 }
 
@@ -70,6 +76,13 @@ export class TripsController {
   @Put(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateTripDto) {
     return this.service.update(id, body)
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Put(':id/complete')
+  complete(@Param('id', ParseIntPipe) id: number) {
+    return this.service.complete(id)
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

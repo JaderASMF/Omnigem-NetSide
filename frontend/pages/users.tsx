@@ -19,7 +19,6 @@ export default function Usuarios() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // form state
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [formEmail, setFormEmail] = useState('')

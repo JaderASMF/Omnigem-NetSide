@@ -48,3 +48,13 @@ select:focus, input:focus, textarea:focus {
 ::-webkit-scrollbar-track { background: #20242A }
 ::-webkit-scrollbar-thumb { background: #3A4250; border-radius: 4px }
 ::-webkit-scrollbar-thumb:hover { background: #4A5568 }
+
+/* Remove number input spinners (arrows) for decimal/number fields */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] {
+  -moz-appearance: textfield;
+}

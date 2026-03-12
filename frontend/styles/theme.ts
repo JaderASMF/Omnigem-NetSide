@@ -32,7 +32,7 @@ export const btnPrimary: React.CSSProperties = {
   background: PALETTE.primary,
   color: '#fff',
   border: 'none',
-  padding: '8px 16px',
+  padding: '6px 12px',
   borderRadius: 6,
   cursor: 'pointer',
   fontWeight: 600,
@@ -52,7 +52,7 @@ export const btnCancel: React.CSSProperties = {
   background: 'transparent',
   color: PALETTE.error,
   border: `1px solid ${PALETTE.error}`,
-  padding: '8px 16px',
+  padding: '6px 12px',
   borderRadius: 6,
   cursor: 'pointer',
   fontWeight: 600,
@@ -62,7 +62,7 @@ export const btnDanger: React.CSSProperties = {
   background: PALETTE.error,
   color: '#fff',
   border: 'none',
-  padding: '8px 16px',
+  padding: '6px 12px',
   borderRadius: 6,
   cursor: 'pointer',
   fontWeight: 600,
@@ -70,7 +70,7 @@ export const btnDanger: React.CSSProperties = {
 
 export const btnSmall: React.CSSProperties = {
   fontSize: 12,
-  padding: '2px 8px',
+  padding: '4px 6px',
   cursor: 'pointer',
   background: PALETTE.hoverBg,
   color: PALETTE.textPrimary,
@@ -79,8 +79,8 @@ export const btnSmall: React.CSSProperties = {
 };
 
 export const btnSmallBlue: React.CSSProperties = {
-  fontSize: 10,
-  padding: '2px 6px',
+  fontSize: 11,
+  padding: '4px 6px',
   cursor: 'pointer',
   background: PALETTE.primary,
   color: '#fff',
@@ -101,7 +101,7 @@ export const btnSmallRed: React.CSSProperties = {
 };
 
 export const btnNav: React.CSSProperties = {
-  padding: '6px 14px',
+  padding: '6px 12px',
   cursor: 'pointer',
   border: `1px solid ${PALETTE.border}`,
   borderRadius: 6,
@@ -114,13 +114,13 @@ export const btnNav: React.CSSProperties = {
 
 export const inputStyle: React.CSSProperties = {
   width: '100%',
-  padding: '8px 10px',
+  padding: '6px 8px',
   backgroundColor: PALETTE.backgroundSecondary,
   color: PALETTE.textPrimary,
   border: `1px solid ${PALETTE.border}`,
-  borderRadius: 6,
+  borderRadius: 4,
   fontFamily: 'inherit',
-  fontSize: 14,
+  fontSize: 13,
   boxSizing: 'border-box',
 };
 
@@ -131,9 +131,9 @@ export const selectStyle: React.CSSProperties = {
 export const labelStyle: React.CSSProperties = {
   display: 'block',
   fontWeight: 600,
-  fontSize: 13,
+  fontSize: 12,
   color: PALETTE.textSecondary,
-  marginBottom: 4,
+  marginBottom: 2,
 };
 
 /* ── Estilos de card ── */
@@ -142,5 +142,5 @@ export const cardStyle: React.CSSProperties = {
   background: PALETTE.cardBg,
   border: `1px solid ${PALETTE.border}`,
   borderRadius: 8,
-  padding: 16,
+  padding: 12,
 };

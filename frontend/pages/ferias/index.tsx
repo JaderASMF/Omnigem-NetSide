@@ -748,6 +748,7 @@ export default function VacationsPage() {
 
     return (
       <div style={{ display: 'flex', gap: 20, alignItems: 'stretch', height: '100%' }}>
+        {/* Calendario de ferias */}
         <div style={{ ...cardStyle, width: '60%', height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
             <button onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1))} style={btnSmall}>◀</button>

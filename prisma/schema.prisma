@@ -42,6 +42,7 @@ model Worker {
   vacations         Vacation[]
   trips             Trip[]    @relation("TravelerTrip")
   drivenTrips       Trip[]    @relation("DriverTrip")
+  vehicleExpenses    VehicleExpense[]
 }
 
 // Feriados (datas em que geralmente não se escala)
@@ -155,6 +156,34 @@ model Vehicle {
   notes     String?
   createdAt DateTime @default(now())
   trips     Trip[]
+  expenses  VehicleExpense[]
+}
+
+model VehicleExpenseCategory {
+  id          Int               @id @default(autoincrement())
+  name        String            @unique
+  description String?
+  createdAt   DateTime          @default(now())
+  expenses    VehicleExpense[]
+}
+
+model VehicleExpense {
+  id         Int      @id @default(autoincrement())
+  vehicleId  Int
+  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id])
+  date       DateTime
+  categoryId Int?
+  category   VehicleExpenseCategory? @relation(fields: [categoryId], references: [id])
+  amount     Decimal   @default(0)
+  currency   String?   @default("BRL")
+  odometer   Decimal?
+  workerId   Int?
+  worker     Worker?  @relation(fields: [workerId], references: [id])
+  receiptUrl String?
+  notes      String?
+  createdAt  DateTime  @default(now())
+
+  @@index([vehicleId, workerId, categoryId])
 }
 
 model AppSetting {
@@ -171,7 +200,7 @@ model Trip {
   city                 City     @relation(fields: [cityId], references: [id])
   vehicleId            Int?
   vehicle              Vehicle? @relation(fields: [vehicleId], references: [id])
-  date                 DateTime
+  date                 DateTime // Data de início da viagem
   client               String?
   serviceTypeId        Int
   serviceType          ServiceType @relation(fields: [serviceTypeId], references: [id])

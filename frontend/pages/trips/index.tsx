@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/router'
 import { API_BASE, authHeaders, jsonAuthHeaders } from '../../config/api'
 import {
   PALETTE, btnPrimary, btnCancel, btnDanger, btnSmallBlue, btnSmallRed,
   cardStyle, inputStyle, selectStyle, labelStyle, btnNav,
+  btnSmall,
 } from '../../styles/theme'
 import { useToast } from '../../components/shared/ToastProvider'
 import WorkersContent from '../../components/shared/WorkersContent'
@@ -23,6 +24,8 @@ type Trip = {
   completed?: boolean; endDate?: string
   createdAt: string; updatedAt?: string
 }
+
+type ExpenseCategory = { id: number; name: string; description?: string }
 
 const EMPTY_FORM = {
   date: '', cityId: '', vehicleId: '', client: '', serviceTypeId: '',
@@ -60,6 +63,35 @@ function truncate(s: string | undefined, n = 80) { if (!s) return ''; return s.l
 
 const cellSingleLine: React.CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
 
+function parseLocalDate(s: string) {
+  const parts = s.split('-').map(Number)
+  return new Date(parts[0], parts[1] - 1, parts[2])
+}
+
+function isoDate(d: Date) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const cellStyle: React.CSSProperties = {
+  minHeight: 90,
+  padding: 0,
+  border: `1px solid ${PALETTE.border}`,
+  borderRadius: 6,
+  fontSize: 12,
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
+  position: 'relative',
+  transition: 'background 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease',
+  WebkitTapHighlightColor: 'transparent',
+}
+
+const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+
 export default function Trips() {
   const router = useRouter()
   const { addToast } = useToast()
@@ -74,6 +106,7 @@ export default function Trips() {
   const [filterEnd, setFilterEnd] = useState('')
   const [filterCity, setFilterCity] = useState('')
   const [filterVehicle, setFilterVehicle] = useState('')
+  const [filterWorker, setFilterWorker] = useState('')
   const [filterType, setFilterType] = useState('')
   const [serviceTypes, setServiceTypes] = useState<{ id: number; name: string; code?: string }[]>([])
 
@@ -92,18 +125,32 @@ export default function Trips() {
   const [vehicleForm, setVehicleForm] = useState({ plate: '', model: '', notes: '' })
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
 
+  // Vehicle expenses UI state
+  const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null)
+  const [vehicleExpenses, setVehicleExpenses] = useState<any[]>([])
+  const [loadingExpenses, setLoadingExpenses] = useState(false)
+  const [showExpenseModal, setShowExpenseModal] = useState(false)
+  const [editingExpense, setEditingExpense] = useState<any | null>(null)
+  const [expenseForm, setExpenseForm] = useState({ date: '', categoryId: '', amount: '', currency: 'BRL', odometer: '', receiptUrl: '', notes: '', workerId: '' })
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([])
+
   const [showExtraNoteModal, setShowExtraNoteModal] = useState(false)
   const extraNoteInputRef = useRef<HTMLInputElement | null>(null)
 
   const [showManageCities, setShowManageCities] = useState(false)
   const [showManageVehicles, setShowManageVehicles] = useState(false)
   const [showManageWorkers, setShowManageWorkers] = useState(false)
+  const [showCategories, setShowCategories] = useState(false)
 
   const [hoveredRow, setHoveredRow] = useState<number | null>(null)
 
   const [showServiceTypeModal, setShowServiceTypeModal] = useState(false)
   const [serviceTypeForm, setServiceTypeForm] = useState({ name: '', code: '' })
   const [editingServiceType, setEditingServiceType] = useState<{ id: number; name: string; code?: string } | null>(null)
+
+  const [showCategoryModal, setShowCategoryModal] = useState(false)
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' })
+  const [editingCategory, setEditingCategory] = useState<ExpenseCategory | null>(null)
 
   const [confirmDelete, setConfirmDelete] = useState<Trip | null>(null)
 
@@ -113,6 +160,58 @@ export default function Trips() {
 
   const [tab, setTab] = useState<'trips' | 'cities' | 'vehicles' | 'serviceTypes'>('trips')
   const [showFilters, setShowFilters] = useState(false)
+  const [tripsView, setTripsView] = useState<'list' | 'calendar'>('list')
+  const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null)
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [sidebarFilter, setSidebarFilter] = useState<'completed' | 'pending'>('completed')
+  const [listViewMode, setListViewMode] = useState<'both' | 'pending' | 'completed'>('pending')
+  const [canViewBoth, setCanViewBoth] = useState(false)
+  const [canEdit, setCanEdit] = useState(false)
+
+  useEffect(() => {
+    if (selectedDay) {
+      setPanelOpen(false)
+      requestAnimationFrame(() => setPanelOpen(true))
+    } else {
+      setPanelOpen(false)
+    }
+  }, [selectedDay])
+
+  const calendarDays = useMemo(() => {
+    const year = calMonth.getFullYear()
+    const month = calMonth.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    const startOffset = firstDay.getDay()
+    const days: { date: Date; current: boolean }[] = []
+
+    for (let i = startOffset - 1; i >= 0; i--) {
+      const d = new Date(year, month, -i)
+      days.push({ date: d, current: false })
+    }
+    for (let i = 1; i <= lastDay.getDate(); i++) {
+      days.push({ date: new Date(year, month, i), current: true })
+    }
+    while (days.length < 42) {
+      const last = days[days.length - 1].date
+      const d = new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1)
+      days.push({ date: d, current: false })
+    }
+
+    const weeks: { date: Date; current: boolean }[][] = []
+    for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7))
+    while (weeks.length > 0 && weeks[weeks.length - 1].every(d => !d.current)) weeks.pop()
+    return weeks.flat()
+  }, [calMonth])
+
+  function tripsForDate(date: Date) {
+    const iso = isoDate(date)
+    return trips.filter(t => {
+      const start = isoDate(new Date(t.date))
+      return iso === start
+    })
+  }
 
   const fetchTrips = useCallback(async () => {
     setLoading(true)
@@ -152,6 +251,24 @@ export default function Trips() {
     } catch { setWorkers([]) }
   }, [])
 
+  const fetchVehicleExpenses = useCallback(async (vehicleId?: number) => {
+    setLoadingExpenses(true)
+    try {
+      if (!vehicleId) { setVehicleExpenses([]); return }
+      const r = await fetch(`${API_BASE}/vehicle-expenses?vehicleId=${vehicleId}`, { headers: authHeaders() })
+      if (!r.ok) { setVehicleExpenses([]); return }
+      setVehicleExpenses(await r.json())
+    } catch { setVehicleExpenses([]) } finally { setLoadingExpenses(false) }
+  }, [])
+
+  const fetchExpenseCategories = useCallback(async () => {
+    try {
+      const r = await fetch(`${API_BASE}/vehicle-expense-categories`, { headers: authHeaders() })
+      if (!r.ok) { setExpenseCategories([]); return }
+      setExpenseCategories(await r.json())
+    } catch { setExpenseCategories([]) }
+  }, [])
+
   useEffect(() => { fetchTrips() }, [fetchTrips])
 
   const fetchSettings = useCallback(async () => {
@@ -166,6 +283,11 @@ export default function Trips() {
   }, [])
 
   useEffect(() => { fetchCities(); fetchVehicles(); fetchWorkers(); fetchSettings(); fetchServiceTypes() }, [fetchCities, fetchVehicles, fetchWorkers, fetchSettings, fetchServiceTypes])
+  useEffect(() => { fetchExpenseCategories() }, [fetchExpenseCategories])
+
+  useEffect(() => {
+    fetchVehicleExpenses(selectedVehicleId ?? undefined)
+  }, [selectedVehicleId, fetchVehicleExpenses])
 
   useEffect(() => {
     if (showExtraNoteModal) extraNoteInputRef.current?.focus()
@@ -217,6 +339,7 @@ export default function Trips() {
   }
 
   function handleRecalculate() {
+    if (!editingTrip?.completed) return
     const meal = Number(form.mealExpense) || 0
     const fuel = Number(form.fuelExpense) || 0
     const extra = Number(form.extraExpense) || 0
@@ -239,6 +362,7 @@ export default function Trips() {
   useEffect(() => {
     if (!showTripModal) return
     if (costEdited) return
+    if (!editingTrip?.completed) return
     const meal = Number(form.mealExpense) || 0
     const fuel = Number(form.fuelExpense) || 0
     const extra = Number(form.extraExpense) || 0
@@ -256,7 +380,7 @@ export default function Trips() {
       const displayProfit = String(Number(computedProfit).toFixed(2))
       if (form.profitPerKm !== displayProfit) setForm(f => ({ ...f, profitPerKm: displayProfit }))
     }
-  }, [form.mealExpense, form.fuelExpense, form.extraExpense, form.kmDriven, form.price, costEdited, showTripModal])
+  }, [form.mealExpense, form.fuelExpense, form.extraExpense, form.kmDriven, form.price, costEdited, showTripModal, editingTrip?.completed])
 
   async function handleSaveTrip(e: React.FormEvent) {
     e.preventDefault()
@@ -266,22 +390,29 @@ export default function Trips() {
     const km = num(form.kmDriven) || 0
     const computedCostPerKm = km > 0 ? (meal + fuel + extra) / km : undefined
     const computedProfitPerKm = km > 0 ? ((num(form.price) || 0 - (meal + fuel + extra)) / km) : undefined
-
     const payload: any = {
-      date: form.date, cityId: Number(form.cityId),
-      price: num(form.price) ?? null,
+      date: form.date,
+      cityId: Number(form.cityId),
       vehicleId: form.vehicleId ? Number(form.vehicleId) : null,
       client: form.client || null,
       serviceTypeId: Number(form.serviceTypeId),
-      mealExpense: num(form.mealExpense), fuelExpense: num(form.fuelExpense),
-      extraExpense: num(form.extraExpense), notesExtraExpense: form.notesExtraExpense || null,
-      kmDriven: num(form.kmDriven),
-      costPerKm: (num(form.costPerKm) ?? computedCostPerKm) ?? null,
-      profitPerKm: (num(form.profitPerKm) ?? computedProfitPerKm) ?? null,
-      avgConsumption: num(form.avgConsumption), remainingAutonomy: num(form.remainingAutonomy),
       travelerIds: form.travelerIds, driverIds: form.driverIds,
       note: form.note || null,
       endDate: form.endDate ? new Date(form.endDate + 'T00:00:00').toISOString() : null,
+    }
+
+    // apenas inclui campos de despesas/quilometragem se a viagem estiver concluída
+    if (editingTrip?.completed) {
+      payload.price = num(form.price) ?? null
+      payload.mealExpense = num(form.mealExpense)
+      payload.fuelExpense = num(form.fuelExpense)
+      payload.extraExpense = num(form.extraExpense)
+      payload.notesExtraExpense = form.notesExtraExpense || null
+      payload.kmDriven = num(form.kmDriven)
+      payload.costPerKm = (num(form.costPerKm) ?? computedCostPerKm) ?? null
+      payload.profitPerKm = (num(form.profitPerKm) ?? computedProfitPerKm) ?? null
+      payload.avgConsumption = num(form.avgConsumption)
+      payload.remainingAutonomy = num(form.remainingAutonomy)
     }
     try {
       const url = editingTrip ? `${API_BASE}/trips/${editingTrip.id}` : `${API_BASE}/trips`
@@ -312,6 +443,15 @@ export default function Trips() {
       addToast('Viagem marcada como completa', 'success')
       await fetchTrips()
     } catch { addToast('Erro ao marcar completa', 'error') }
+  }
+
+  async function handleMarkIncomplete(t: Trip) {
+    try {
+      const res = await fetch(`${API_BASE}/trips/${t.id}`, { method: 'PUT', headers: jsonAuthHeaders(), body: JSON.stringify({ completed: false, endDate: null }) })
+      if (!res.ok) throw new Error('Erro')
+      addToast('Viagem marcada como pendente', 'success')
+      await fetchTrips()
+    } catch { addToast('Erro ao marcar pendente', 'error') }
   }
 
   function openNewCity() { setEditingCity(null); setCityForm({ name: '', state: '', country: 'BR' }); setShowCityModal(true) }
@@ -358,6 +498,38 @@ export default function Trips() {
     } catch { addToast('Erro ao excluir (pode ter viagens vinculadas)', 'error') }
   }
 
+  async function handleSaveExpense(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedVehicleId) return
+    try {
+      const payload: any = { vehicleId: selectedVehicleId, workerId: expenseForm.workerId ? Number(expenseForm.workerId) : null }
+      if (expenseForm.amount) payload.amount = Number(expenseForm.amount)
+      if (expenseForm.odometer) payload.odometer = Number(expenseForm.odometer)
+      if (expenseForm.date) payload.date = expenseForm.date
+      if (expenseForm.notes) payload.notes = expenseForm.notes
+      if (expenseForm.currency) payload.currency = expenseForm.currency
+      // categoryId as number (or omitted)
+      if (expenseForm.categoryId) payload.categoryId = Number(expenseForm.categoryId)
+      const url = editingExpense ? `${API_BASE}/vehicle-expenses/${editingExpense.id}` : `${API_BASE}/vehicle-expenses`
+      const method = editingExpense ? 'PUT' : 'POST'
+      const res = await fetch(url, { method, headers: jsonAuthHeaders(), body: JSON.stringify(payload) })
+      if (!res.ok) throw new Error('Erro')
+      addToast(editingExpense ? 'Despesa atualizada' : 'Despesa criada', 'success')
+      setShowExpenseModal(false)
+      await fetchVehicleExpenses(selectedVehicleId)
+    } catch (err) { addToast('Erro ao salvar despesa', 'error') }
+  }
+
+  async function handleDeleteExpense(id: number) {
+    if (!confirm('Excluir despesa?')) return
+    try {
+      const res = await fetch(`${API_BASE}/vehicle-expenses/${id}`, { method: 'DELETE', headers: jsonAuthHeaders() })
+      if (!res.ok) throw new Error('Erro')
+      addToast('Despesa excluída', 'success')
+      await fetchVehicleExpenses(selectedVehicleId ?? undefined)
+    } catch { addToast('Erro ao excluir despesa', 'error') }
+  }
+
   function openNewServiceType() { setEditingServiceType(null); setServiceTypeForm({ name: '', code: '' }); setShowServiceTypeModal(true) }
   function openEditServiceType(s: { id: number; name: string; code?: string }) { setEditingServiceType(s); setServiceTypeForm({ name: s.name, code: s.code ?? '' }); setShowServiceTypeModal(true) }
 
@@ -384,12 +556,59 @@ export default function Trips() {
     } catch { addToast('Erro ao excluir (pode ter viagens vinculadas)', 'error') }
   }
 
-  const filtered = trips.filter(t => {
-    if (filterCity && t.cityId !== Number(filterCity)) return false
-    if (filterVehicle && t.vehicleId !== Number(filterVehicle)) return false
-    if (filterType !== '' && t.serviceTypeId !== Number(filterType)) return false
-    return true
-  })
+  function openNewCategory() { setEditingCategory(null); setCategoryForm({ name: '', description: '' }); setShowCategoryModal(true) }
+  function openEditCategory(c: ExpenseCategory) { setEditingCategory(c); setCategoryForm({ name: c.name, description: c.description ?? '' }); setShowCategoryModal(true) }
+
+  async function handleSaveCategory(e: React.FormEvent) {
+    e.preventDefault()
+    try {
+      const url = editingCategory ? `${API_BASE}/vehicle-expense-categories/${editingCategory.id}` : `${API_BASE}/vehicle-expense-categories`
+      const method = editingCategory ? 'PUT' : 'POST'
+      const res = await fetch(url, { method, headers: jsonAuthHeaders(), body: JSON.stringify(categoryForm) })
+      if (!res.ok) { const j = await res.json().catch(() => null); throw new Error(j?.message || 'Erro') }
+      addToast(editingCategory ? 'Categoria atualizada' : 'Categoria criada', 'success')
+      setShowCategoryModal(false)
+      await fetchExpenseCategories()
+    } catch (err: any) { addToast(err?.message || 'Erro ao salvar', 'error') }
+  }
+
+  async function handleDeleteCategory(id: number) {
+    if (!confirm('Excluir categoria?')) return
+    try {
+      const res = await fetch(`${API_BASE}/vehicle-expense-categories/${id}`, { method: 'DELETE', headers: jsonAuthHeaders() })
+      if (!res.ok) throw new Error('Erro')
+      addToast('Categoria excluída', 'success')
+      await fetchExpenseCategories()
+    } catch { addToast('Erro ao excluir (pode estar em uso)', 'error') }
+  }
+
+  const filtered = (() => {
+    const base = trips.filter(t => {
+      if (filterCity && t.cityId !== Number(filterCity)) return false
+      if (filterVehicle && t.vehicleId !== Number(filterVehicle)) return false
+      if (filterWorker) {
+        const wid = Number(filterWorker)
+        const hasTraveler = Array.isArray(t.travelers) && t.travelers.some(w => w.id === wid)
+        const hasDriver = Array.isArray(t.drivers) && t.drivers.some(w => w.id === wid)
+        if (!hasTraveler && !hasDriver) return false
+      }
+      if (filterType !== '' && t.serviceTypeId !== Number(filterType)) return false
+      return true
+    })
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const future = base
+      .filter(t => new Date(t.date).getTime() >= today.getTime())
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+    const past = base
+      .filter(t => new Date(t.date).getTime() < today.getTime())
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+    return [...future, ...past]
+  })()
 
   function toggleTraveler(wid: number) {
     setForm(f => {
@@ -414,16 +633,131 @@ export default function Trips() {
     })
   }
 
-  return (
-    <main style={{ background: PALETTE.background, color: PALETTE.textPrimary, fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ margin: '0 auto' }}>
+  useEffect(() => {
+    try {
+      const roles = JSON.parse(localStorage.getItem('plantoes_roles') || '[]')
+      const hasControl = Array.isArray(roles) && (roles.includes('ADMIN') || roles.includes('Controla viagem') || roles.includes('adm/controla viagens') || roles.includes('adm'))
+      setCanViewBoth(hasControl)
+      setCanEdit(hasControl)
+      if (!hasControl) {
+        setListViewMode('pending')
+      }
+    } catch {
+      setCanViewBoth(false)
+      setCanEdit(false)
+      setListViewMode('pending')
+    }
+  }, [])
 
+  const renderTripsTable = (list: Trip[], title?: string) => (
+    <div style={{ ...cardStyle, padding: 12, marginLeft: 24, marginRight: 24, overflowX: 'auto', maxHeight: '60vh', overflowY: 'auto', borderRadius: 8 }}>
+      {title && <h3 style={{ margin: '6px 0 10px 0' }}>{title}</h3>}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: `2px solid ${PALETTE.border}` }}>
+              <th style={{ padding: '10px 8px', width: 160, position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Data</th>
+              <th style={{ padding: '10px 8px', width: 160, position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Tipo</th>
+              <th style={{ padding: '10px 8px', position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Cidade</th>
+              <th style={{ padding: '10px 8px', position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Veículo</th>
+              <th style={{ padding: '10px 8px', position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Passageiros</th>
+              <th style={{ padding: '10px 8px', position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Motoristas</th>
+              {canEdit && (
+                <>
+                  <th style={{ padding: '10px 8px', textAlign: 'right', width: 140, position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Custo/km (R$)</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'right', width: 140, position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Lucro/km (R$)</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'right', width: 200, position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Custo Total</th>
+                </>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((t, i) => {
+              const totalExpense = (Number(t.mealExpense) || 0) + (Number(t.fuelExpense) || 0) + (Number(t.extraExpense) || 0)
+              const expenseStr = money(totalExpense)
+              const km = Number(t.kmDriven) || 0
+              const computedCostPerKm = t.costPerKm != null ? Number(t.costPerKm) : (km > 0 ? totalExpense / km : 0)
+              const costPerKmStr = money(computedCostPerKm)
+              const computedProfitPerKm = t.profitPerKm != null ? Number(t.profitPerKm) : (km > 0 ? ((Number(t.price) || 0 - totalExpense) / km) : 0)
+              const profitPerKmStr = money(computedProfitPerKm)
+              const priceVal = Number(t.price) || 0
+              const computedTotalValue = priceVal - totalExpense
+              const totalCostStr = money(computedTotalValue)
+              const rowBg = hoveredRow === t.id ? PALETTE.hoverBg : (i % 2 === 0 ? PALETTE.cardBg : PALETTE.hoverBg)
+              return (
+                <tr key={t.id} onClick={() => canEdit ? openEditTrip(t) : undefined} onMouseEnter={() => setHoveredRow(t.id)} onMouseLeave={() => setHoveredRow(null)} style={{ cursor: canEdit ? 'pointer' : 'default', borderBottom: `1px solid ${PALETTE.border}`, background: rowBg, transition: 'background 120ms ease' }}>
+                  <td style={{ padding: 10, verticalAlign: 'top', color: PALETTE.textSecondary, width: 160, ...cellSingleLine }}>
+                    <div style={{ ...cellSingleLine }}>📅 {new Date(t.date).toLocaleDateString('pt-BR')}</div>
+                  </td>
+                  <td style={{ padding: 10, verticalAlign: 'top', maxWidth: 180, ...cellSingleLine }}>
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, color: '#fff', background: PALETTE.primary, fontWeight: 600 }}>
+                      {t.client ? `${t.client} — ${t.serviceType?.name ?? '?'}` : (t.serviceType?.name ?? '?')}
+                    </span>
+                  </td>
+                  <td style={{ padding: 10, verticalAlign: 'top', maxWidth: 300, ...cellSingleLine }}>
+                    <div style={{ fontWeight: 700, minWidth: 140, ...cellSingleLine }}>{t.city?.name ?? '—'}</div>
+                  </td>
+                  <td style={{ padding: 10, verticalAlign: 'top', color: PALETTE.textSecondary, maxWidth: 220, ...cellSingleLine }}>{t.vehicle ? `${t.vehicle.model ?? '—'} ${t.vehicle.plate ? `(${t.vehicle.plate})` : ''}` : '—'}</td>
+                  <td style={{ padding: 10, verticalAlign: 'top', color: PALETTE.textSecondary, maxWidth: 220, ...cellSingleLine }}>{t.travelers?.map((w: Worker) => w.name).join(', ') || '—'}</td>
+                  <td style={{ padding: 10, verticalAlign: 'top', color: PALETTE.textSecondary, maxWidth: 220, ...cellSingleLine }}>{t.drivers?.map((w: Worker) => w.name).join(', ') || '—'}</td>
+                  {canEdit && (
+                    <>
+                      <td style={{ padding: 10, verticalAlign: 'top', textAlign: 'right', color: PALETTE.textSecondary, width: 140, ...cellSingleLine }}>
+                        <div style={{ fontWeight: 600, color: costPerKmStr ? PALETTE.textPrimary : PALETTE.textSecondary }}>{costPerKmStr || '-'}</div>
+                      </td>
+                      <td style={{ padding: 10, verticalAlign: 'top', textAlign: 'right', color: PALETTE.textSecondary, width: 140, ...cellSingleLine }}>
+                        <div style={{ fontWeight: 600, color: profitPerKmStr ? PALETTE.textPrimary : PALETTE.textSecondary }}>{profitPerKmStr || '-'}</div>
+                      </td>
+                      <td style={{ padding: 10, verticalAlign: 'top', textAlign: 'right', minWidth: 180, ...cellSingleLine }}>
+                        <div style={{ fontWeight: 600, color: totalCostStr ? PALETTE.warning : PALETTE.textSecondary }}>{totalCostStr || expenseStr || '-'}</div>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+
+  return (
+    <main style={{ height: '100vh', background: PALETTE.background, color: PALETTE.textPrimary, fontFamily: 'system-ui, sans-serif' }}>
+      <div style={{ margin: '0 auto', flex: 1, boxSizing: 'border-box', height: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 16, borderBottom: `1px solid ${PALETTE.border}`, marginBottom: 12 }}>
           <button onClick={() => router.push('/selection')} style={btnNav}>← Voltar</button>
           <h2 style={{ margin: 0, fontSize: 22 }}>Viagens</h2>
-          <button type="button" onClick={() => setShowManageWorkers(true)} style={btnNav}>Trabalhadores</button>
-          <button type="button" onClick={() => setShowSettingsModal(true)} style={btnNav}>Padrões</button>
-          <button onClick={openNewTrip} style={{ ...btnNav, background: PALETTE.success, color: '#fff', border: 'none' }}>+ Nova Viagem</button>
+          {canEdit && <button type="button" onClick={() => setShowManageWorkers(true)} style={btnNav}>Trabalhadores</button>}
+          {canEdit && <button type="button" onClick={() => setShowSettingsModal(true)} style={btnNav}>Padrões</button>}
+          <button
+            type="button"
+            onClick={() => setTripsView(v => v === 'list' ? 'calendar' : 'list')}
+            style={{
+              ...btnNav,
+              background: tripsView === 'calendar' ? PALETTE.primary : PALETTE.hoverBg,
+              color: tripsView === 'calendar' ? '#ffffff' : PALETTE.textSecondary,
+              border: tripsView === 'calendar' ? 'none' : `1px solid ${PALETTE.border}`,
+              fontWeight: tripsView === 'calendar' ? 700 : 500,
+              opacity: tripsView === 'calendar' ? 1 : 0.85,
+              transition: 'background 160ms ease, color 160ms ease, opacity 120ms ease',
+              marginRight: 6,
+            }}
+          >
+            📅 Calendário
+          </button>
+          {canEdit && <button onClick={openNewTrip} style={{ ...btnNav, background: PALETTE.success, color: '#fff', border: 'none' }}>+ Nova Viagem</button>}
+          {/** Filtro global por trabalhador (aplicado a todas as listas de viagens) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }}>
+            <select
+              value={filterWorker}
+              onChange={e => setFilterWorker(e.target.value)}
+              style={{ padding: 6, backgroundColor: PALETTE.backgroundSecondary, color: PALETTE.textPrimary, border: `1px solid ${PALETTE.border}`, borderRadius: 6, minWidth: 220 }}
+            >
+              <option value="">Todos os trabalhadores</option>
+              {workers.map(w => <option key={w.id} value={String(w.id)}>{w.name}</option>)}
+            </select>
+          </div>
           <div style={{ flex: 1 }} />
           {(['trips', 'cities', 'vehicles', 'serviceTypes'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} style={{
@@ -438,13 +772,260 @@ export default function Trips() {
           ))}
         </div>
 
-        <div style={{ marginBottom: 12, padding: '0 24px' }}>
-          <button type="button" onClick={() => setShowFilters(s => !s)} style={{ ...btnNav }}>
-            {showFilters ? 'Ocultar Filtros' : 'Mostrar Filtros'}
-          </button>
-        </div>
+        {tripsView !== 'calendar' && (
+          <div style={{ marginBottom: 12, padding: '0 24px', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button type="button" onClick={() => setShowFilters(s => !s)} style={{ ...btnNav }}>
+              {showFilters ? 'Ocultar Filtros' : 'Mostrar Filtros'}
+            </button>
 
-        {tab === 'trips' && <>
+            <div style={{ width: 8 }} />
+
+            {canViewBoth && (
+              <button type="button" onClick={() => setListViewMode('both')} style={{
+                ...btnNav,
+                background: listViewMode === 'both' ? PALETTE.primary : PALETTE.hoverBg,
+                color: listViewMode === 'both' ? '#fff' : PALETTE.textPrimary,
+                border: listViewMode === 'both' ? 'none' : `1px solid ${PALETTE.border}`,
+              }}>Ambas</button>
+            )}
+
+            <button type="button" onClick={() => setListViewMode('pending')} style={{
+              ...btnNav,
+              background: listViewMode === 'pending' ? PALETTE.primary : PALETTE.hoverBg,
+              color: listViewMode === 'pending' ? '#fff' : PALETTE.textPrimary,
+              border: listViewMode === 'pending' ? 'none' : `1px solid ${PALETTE.border}`,
+            }}>Pendentes</button>
+
+            <button type="button" onClick={() => setListViewMode('completed')} style={{
+              ...btnNav,
+              background: listViewMode === 'completed' ? PALETTE.primary : PALETTE.hoverBg,
+              color: listViewMode === 'completed' ? '#fff' : PALETTE.textPrimary,
+              border: listViewMode === 'completed' ? 'none' : `1px solid ${PALETTE.border}`,
+            }}>Concluídas</button>
+          </div>
+        )}
+
+        {/* Tab de viagens */}
+        {tab === 'trips' && (
+          tripsView === 'calendar' ? (
+            <div style={{ ...cardStyle, marginLeft: 24, marginRight: 24, padding: 12, height: '85%', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <button onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1))} style={btnSmall}>◀</button>
+                <h3 style={{ margin: 0, fontSize: 16, minWidth: 120 }}>{MONTHS[calMonth.getMonth()]} {calMonth.getFullYear()}</h3>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select
+                    value={calMonth.getMonth()}
+                    onChange={e => setCalMonth(new Date(calMonth.getFullYear(), Number(e.target.value), 1))}
+                    style={{ padding: 6, width: 150, backgroundColor: PALETTE.backgroundSecondary, color: PALETTE.textPrimary, border: `1px solid ${PALETTE.border}`, borderRadius: 6 }}
+                  >
+                    {MONTHS.map((mn, i) => <option key={i} value={i}>{mn}</option>)}
+                  </select>
+                  <select
+                    value={calMonth.getFullYear()}
+                    onChange={e => setCalMonth(new Date(Number(e.target.value), calMonth.getMonth(), 1))}
+                    style={{ padding: 6, backgroundColor: PALETTE.backgroundSecondary, color: PALETTE.textPrimary, border: `1px solid ${PALETTE.border}`, borderRadius: 6 }}
+                  >
+                    {(() => {
+                      const cur = calMonth.getFullYear()
+                      const arr: number[] = []
+                      for (let y = cur - 5; y <= cur + 5; y++) arr.push(y)
+                      return arr.map(y => <option key={y} value={y}>{y}</option>)
+                    })()}
+                  </select>
+                </div>
+                <button
+                  onClick={() => setCalMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
+                  style={{ ...btnSmall, minWidth: 72 }}
+                  title="Ir para o mês atual"
+                >
+                  Hoje
+                </button>
+                <button onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1))} style={btnSmall}>▶</button>
+                <div style={{ flex: 1 }} />
+              </div>
+              <div style={{ display: 'flex', gap: 12, height: '92%' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                    {WEEKDAYS.map(d => (
+                      <div key={d} style={{ textAlign: 'center', padding: '8px 6px', height: 44, maxHeight: 44, borderBottom: `2px solid ${PALETTE.border}`, background: PALETTE.backgroundSecondary, fontWeight: 600, fontSize: 13, color: PALETTE.textSecondary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{d}</div>
+                    ))}
+                    {calendarDays.map((d, i) => {
+                      const tlist = tripsForDate(d.date)
+                      const isToday = isoDate(d.date) === isoDate(new Date())
+                      const baseBg = !d.current ? PALETTE.notCurrentBg : isToday ? PALETTE.todayBg : PALETTE.cardBg
+                      return (
+                        <div
+                          key={i}
+                          style={{
+                            ...cellStyle,
+                            background: baseBg,
+                            border: isToday ? `2px solid ${PALETTE.primary}` : `1px solid ${PALETTE.border}`,
+                            opacity: d.current ? 1 : 0.4,
+                            cursor: 'pointer',
+                            transition: 'transform 200ms ease, box-shadow 200ms ease',
+                          }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-6px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 8px 20px rgba(0,0,0,0.08)'; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; (e.currentTarget as HTMLElement).style.boxShadow = ''; }}
+                          onClick={() => { setSelectedDay(d.date) }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px 6px 2px' }}>
+                            <span style={{ fontWeight: 600, fontSize: 20 }}>{d.date.getDate()}</span>
+                          </div>
+                          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2, padding: '2px 4px 4px', marginTop: 'auto' }}>
+                            {tlist.slice(0, 2).map((t, idx) => {
+                              const displayed = Math.min(tlist.length, 2)
+                              const showMore = idx === displayed - 1 && tlist.length > displayed
+                              const moreCount = tlist.length - displayed
+                              return (
+                                <div
+                                  key={t.id}
+                                  onClick={(e) => { e.stopPropagation(); setSelectedDay(d.date); setPanelOpen(true) }}
+                                  title={t.serviceType?.name ?? 'Viagem'}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    fontSize: 13, padding: '1px 4px', borderRadius: 3, marginBottom: 1,
+                                    background: `${PALETTE.primary}33`, color: PALETTE.textPrimary,
+                                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer'
+                                  }}
+                                >
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: 'calc(100% - 24px)' }}>{t.serviceType?.name ?? 'Viagem'}</span>
+                                  {showMore && (
+                                    <span style={{ marginLeft: 6, fontSize: 11, color: '#ffffff', flexShrink: 0 }}>+{moreCount}</span>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* viagens concluidas/pendentes */}
+                <div style={{ width: 420, minWidth: 240, maxHeight: '100%', overflowY: 'auto' }}>
+                  {(() => {
+                    const base = trips.filter(t => {
+                      if (filterCity && t.cityId !== Number(filterCity)) return false
+                      if (filterVehicle && t.vehicleId !== Number(filterVehicle)) return false
+                      if (filterType !== '' && t.serviceTypeId !== Number(filterType)) return false
+                      return true
+                    })
+                    const list = sidebarFilter === 'completed' ? base.filter(t => t.completed) : base.filter(t => !t.completed)
+                    return (
+                      <div style={{ padding: 8, height: '100%', borderRadius: 8, background: PALETTE.backgroundSecondary, border: `1px solid ${PALETTE.border}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <strong>{sidebarFilter === 'completed' ? 'Viagens concluídas' : 'Viagens pendentes'}</strong>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="button" onClick={() => setSidebarFilter('completed')} style={{ ...(btnSmallBlue as any), ...(sidebarFilter === 'completed' ? { background: PALETTE.primary, color: '#fff', border: 'none' } : {}) }}>Completas</button>
+                            <button type="button" onClick={() => setSidebarFilter('pending')} style={{ ...(btnSmallBlue as any), ...(sidebarFilter === 'pending' ? { background: PALETTE.primary, color: '#fff', border: 'none' } : {}) }}>Pendentes</button>
+                          </div>
+                        </div>
+                        {list.length === 0 && <div style={{ color: PALETTE.textSecondary }}>{sidebarFilter === 'completed' ? 'Nenhuma viagem marcada como concluída.' : 'Nenhuma viagem pendente.'}</div>}
+                        {list.slice().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(t => {
+                          const equipe = Array.from(new Set([...(t.drivers || []).map((w: any) => w.name), ...(t.travelers || []).map((w: any) => w.name)])).join(', ') || '—'
+                          return (
+                            <div
+                              key={t.id}
+                              onClick={() => canEdit ? openEditTrip(t) : undefined}
+                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-6px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 8px 20px rgba(0,0,0,0.08)'; }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; (e.currentTarget as HTMLElement).style.boxShadow = ''; }}
+                              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', borderRadius: 6, background: PALETTE.cardBg, marginBottom: 6, cursor: canEdit ? 'pointer' : 'default', border: `1px solid ${PALETTE.border}`, transition: 'transform 200ms ease, box-shadow 200ms ease' }}
+                            >
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 700, fontSize: 13 }}>{(t.serviceType?.name ?? 'Viagem')}{t.client ? ` - ${t.client}` : ''}</div>
+                                <div style={{ fontSize: 12, color: PALETTE.textSecondary }}>{new Date(t.date).toLocaleDateString('pt-BR')} — {t.city?.name ?? '—'}</div>
+                                <div style={{ fontSize: 12, color: PALETTE.textSecondary }}>Equipe: {equipe}</div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
+                </div>
+              </div>
+
+              {/* detalhes do dia */}
+              {selectedDay && (() => {
+                const dayTrips = tripsForDate(selectedDay)
+                const dayOfWeek = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'][selectedDay.getDay()]
+                return (
+                  <div style={{ position: 'fixed', inset: 0, background: '#00000066', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', zIndex: 1000 }}
+                    onClick={e => { if (e.target === e.currentTarget) { setPanelOpen(false); setTimeout(() => setSelectedDay(null), 300) } }}>
+                    <div style={{
+                      width: 420, maxWidth: '95%', height: '100vh', overflow: 'auto',
+                      background: PALETTE.cardBg, padding: 0,
+                      boxShadow: '-8px 0 40px rgba(0,0,0,0.5)',
+                      display: 'flex', flexDirection: 'column',
+                      transform: panelOpen ? 'translateX(0%)' : 'translateX(100%)',
+                      transition: 'transform 280ms cubic-bezier(.2,.9,.2,1)',
+                      willChange: 'transform',
+                    }}>
+                      <div style={{ padding: '20px 24px', borderBottom: `1px solid ${PALETTE.border}`, background: PALETTE.backgroundSecondary }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div>
+                            <h2 style={{ margin: 0, fontSize: 18 }}>{new Date(selectedDay).toLocaleDateString('pt-BR')}</h2>
+                            <div style={{ fontSize: 13, color: PALETTE.textSecondary, marginTop: 4 }}>{dayOfWeek}</div>
+                          </div>
+                          <button onClick={() => { setPanelOpen(false); setTimeout(() => setSelectedDay(null), 300) }} style={{ background: PALETTE.hoverBg, border: `1px solid ${PALETTE.border}`, borderRadius: 6, color: PALETTE.textPrimary, cursor: 'pointer', padding: '6px 12px', fontSize: 14, fontWeight: 600 }}>✕</button>
+                        </div>
+                      </div>
+
+                      <div style={{ padding: '16px 20px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {dayTrips.length === 0 && <div style={{ color: PALETTE.textSecondary }}>Nenhuma viagem neste dia.</div>}
+                        {dayTrips.map(t => {
+                          const tripDateStr = new Date(t.date).toLocaleDateString('pt-BR')
+                          const tripDayOfWeek = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'][new Date(t.date).getDay()]
+                          const typeName = t.serviceType?.name ?? 'Viagem'
+                          const destino = t.city?.name ?? '—'
+                          const veiculo = t.vehicle ? `${t.vehicle.model ?? '—'}${t.vehicle.plate ? ` (${t.vehicle.plate})` : ''}` : '—'
+                          const drivers = (t.drivers || []).map((w: any) => w.name)
+                          const travelers = (t.travelers || []).map((w: any) => w.name)
+                          const equipeNames = Array.from(new Set([...drivers, ...travelers]))
+                          const equipeStr = equipeNames.length ? equipeNames.join(', ') : '—'
+                          return (
+                            <div
+                              key={t.id}
+                              onClick={() => canEdit ? openEditTrip(t) : undefined}
+                              style={{ padding: '10px 12px', borderRadius: 8, background: PALETTE.backgroundSecondary, border: `1px solid ${PALETTE.border}`, cursor: canEdit ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', gap: 6 }}
+                            >
+                              <div style={{ fontWeight: 700 }}>{`${tripDayOfWeek} - ${tripDateStr} - ${typeName}`}</div>
+                              <div style={{ fontSize: 13, color: PALETTE.textSecondary }}>Destino: {destino}</div>
+                              <div style={{ fontSize: 13, color: PALETTE.textSecondary }}>Veículo: {veiculo}</div>
+                              <div style={{ fontSize: 13, color: PALETTE.textSecondary }}>Equipe: {equipeStr}</div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                        <div style={{ padding: '12px 20px', borderTop: `1px solid ${PALETTE.border}`, background: PALETTE.cardBg, position: 'sticky', bottom: 0 }}>
+                        {canEdit ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingTrip(null)
+                              setForm({ ...EMPTY_FORM, date: selectedDay.toISOString().slice(0, 10), mealExpense: defaultMealExpense != null ? String(defaultMealExpense) : '' })
+                              setMealEdited(false)
+                              setCostEdited(false)
+                              setCalcDirty(false)
+                              setShowTripModal(true)
+                            }}
+                            style={{ ...(btnPrimary as any), width: '100%' }}
+                          >
+                            Agendar viagem neste dia
+                          </button>
+                        ) : (
+                          <button type="button" disabled style={{ ...(btnPrimary as any), width: '100%', opacity: 0.6, cursor: 'not-allowed' }}>Sem permissão</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          ) : (
+            <>
           <div
             aria-hidden={!showFilters}
             style={{
@@ -490,79 +1071,46 @@ export default function Trips() {
                         ))}
                       </select>
               </div>
+              
             </div>
           </div>
 
           {loading && <div style={{ color: PALETTE.textSecondary, padding: 12 }}>Carregando...</div>}
           {!loading && filtered.length === 0 && <div style={{ color: PALETTE.textSecondary, padding: 12 }}>Nenhuma viagem encontrada.</div>}
 
-          <div style={{ ...cardStyle, padding: 12, marginLeft: 24, marginRight: 24, overflowX: 'auto', maxHeight: '60vh', overflowY: 'auto', borderRadius: 8 }}>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', borderBottom: `2px solid ${PALETTE.border}` }}>
-                    <th style={{ padding: '10px 8px', width: 160, position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Data</th>
-                    <th style={{ padding: '10px 8px', width: 160, position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Tipo</th>
-                    <th style={{ padding: '10px 8px', position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Cidade</th>
-                    <th style={{ padding: '10px 8px', position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Veículo</th>
-                    <th style={{ padding: '10px 8px', position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Passageiros</th>
-                    <th style={{ padding: '10px 8px', position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Motoristas</th>
-                    <th style={{ padding: '10px 8px', textAlign: 'right', width: 140, position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Custo/km (R$)</th>
-                    <th style={{ padding: '10px 8px', textAlign: 'right', width: 140, position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Lucro/km (R$)</th>
-                    <th style={{ padding: '10px 8px', textAlign: 'right', width: 200, position: 'sticky', top: 0, background: PALETTE.cardBg, zIndex: 3 }}>Custo Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((t, i) => {
-                    const totalExpense = (Number(t.mealExpense) || 0) + (Number(t.fuelExpense) || 0) + (Number(t.extraExpense) || 0)
-                    const expenseStr = money(totalExpense)
-                    const km = Number(t.kmDriven) || 0
-                    const computedCostPerKm = t.costPerKm != null ? Number(t.costPerKm) : (km > 0 ? totalExpense / km : 0)
-                    const costPerKmStr = money(computedCostPerKm)
-                    const computedProfitPerKm = t.profitPerKm != null ? Number(t.profitPerKm) : (km > 0 ? ((Number(t.price) || 0 - totalExpense) / km) : 0)
-                    const profitPerKmStr = money(computedProfitPerKm)
-                    const priceVal = Number(t.price) || 0
-                    const computedTotalValue = priceVal - totalExpense
-                    const totalCostStr = money(computedTotalValue)
-                    const rowBg = hoveredRow === t.id ? PALETTE.hoverBg : (i % 2 === 0 ? PALETTE.cardBg : PALETTE.hoverBg)
-                    return (
-                      <tr key={t.id} onClick={() => openEditTrip(t)} onMouseEnter={() => setHoveredRow(t.id)} onMouseLeave={() => setHoveredRow(null)} style={{ cursor: 'pointer', borderBottom: `1px solid ${PALETTE.border}`, background: rowBg, transition: 'background 120ms ease' }}>
-                        <td style={{ padding: 10, verticalAlign: 'top', color: PALETTE.textSecondary, width: 160, ...cellSingleLine }}>
-                          <div style={{ ...cellSingleLine }}>📅 {new Date(t.date).toLocaleDateString('pt-BR')}</div>
-                        </td>
-                        <td style={{ padding: 10, verticalAlign: 'top', maxWidth: 180, ...cellSingleLine }}>
-                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, color: '#fff', background: PALETTE.primary, fontWeight: 600 }}>{t.serviceType?.name ?? '?'}</span>
-                        </td>
-                        <td style={{ padding: 10, verticalAlign: 'top', maxWidth: 300, ...cellSingleLine }}>
-                          <div style={{ fontWeight: 700, minWidth: 140, ...cellSingleLine }}>{t.city?.name ?? '—'}</div>
-                        </td>
-                        <td style={{ padding: 10, verticalAlign: 'top', color: PALETTE.textSecondary, maxWidth: 220, ...cellSingleLine }}>{t.vehicle ? `${t.vehicle.model ?? '—'} ${t.vehicle.plate ? `(${t.vehicle.plate})` : ''}` : '—'}</td>
-                        <td style={{ padding: 10, verticalAlign: 'top', color: PALETTE.textSecondary, maxWidth: 220, ...cellSingleLine }}>{t.travelers?.map((w: Worker) => w.name).join(', ') || '—'}</td>
-                        <td style={{ padding: 10, verticalAlign: 'top', color: PALETTE.textSecondary, maxWidth: 220, ...cellSingleLine }}>{t.drivers?.map((w: Worker) => w.name).join(', ') || '—'}</td>
-                        <td style={{ padding: 10, verticalAlign: 'top', textAlign: 'right', color: PALETTE.textSecondary, width: 140, ...cellSingleLine }}>
-                          <div style={{ fontWeight: 600, color: costPerKmStr ? PALETTE.textPrimary : PALETTE.textSecondary }}>{costPerKmStr || '-'}</div>
-                        </td>
-                        <td style={{ padding: 10, verticalAlign: 'top', textAlign: 'right', color: PALETTE.textSecondary, width: 140, ...cellSingleLine }}>
-                          <div style={{ fontWeight: 600, color: profitPerKmStr ? PALETTE.textPrimary : PALETTE.textSecondary }}>{profitPerKmStr || '-'}</div>
-                        </td>
-                        <td style={{ padding: 10, verticalAlign: 'top', textAlign: 'right', minWidth: 180, ...cellSingleLine }}>
-                          <div style={{ fontWeight: 600, color: totalCostStr ? PALETTE.warning : PALETTE.textSecondary }}>{totalCostStr || expenseStr || '-'}</div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>}
+          {(() => {
+            const completedList = filtered.filter(t => t.completed)
+            const pendingList = filtered.filter(t => !t.completed)
 
+            if (loading) return <div style={{ color: PALETTE.textSecondary, padding: 12 }}>Carregando...</div>
+            if (!loading && filtered.length === 0) return <div style={{ color: PALETTE.textSecondary, padding: 12 }}>Nenhuma viagem encontrada.</div>
+
+            if (listViewMode === 'both') {
+              return (
+                <>
+                  {renderTripsTable(pendingList, 'Viagens Pendentes')}
+                  <div style={{ height: 12 }} />
+                  {renderTripsTable(completedList, 'Viagens Concluídas')}
+                </>
+              )
+            }
+
+            if (listViewMode === 'pending') return renderTripsTable(pendingList)
+            if (listViewMode === 'completed') return renderTripsTable(completedList)
+
+            return null
+          })()}
+          </>
+          )
+        )}
+
+        {/* Tab de cidades */}
         {tab === 'cities' && <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ display: 'flex', padding: '0 24px', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <h3 style={{ margin: 0 }}>Cidades</h3>
-            <button onClick={openNewCity} style={btnPrimary as any}>+ Nova Cidade</button>
+            {canEdit && <button onClick={openNewCity} style={btnPrimary as any}>+ Nova Cidade</button>}
           </div>
-          <div style={{ display: 'grid', gap: 6 }}>
+          <div style={{ display: 'grid', padding: '0 24px', gap: 6 }}>
             {cities.map(c => (
               <div key={c.id} style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
@@ -571,8 +1119,12 @@ export default function Trips() {
                   {c.country && c.country !== 'BR' && <span style={{ color: PALETTE.textSecondary, marginLeft: 4, fontSize: 12 }}>({c.country})</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
-                  <button onClick={() => openEditCity(c)} style={btnSmallBlue as any}>Editar</button>
-                  <button onClick={() => handleDeleteCity(c.id)} style={btnSmallRed as any}>Excluir</button>
+                  {canEdit ? (
+                    <>
+                      <button onClick={() => openEditCity(c)} style={btnSmallBlue as any}>Editar</button>
+                      <button onClick={() => handleDeleteCity(c.id)} style={btnSmallRed as any}>Excluir</button>
+                    </>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -580,35 +1132,115 @@ export default function Trips() {
           </div>
         </>}
 
+        {/* Tab de veiculos */}
         {tab === 'vehicles' && <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h3 style={{ margin: 0 }}>Veículos</h3>
-            <button onClick={openNewVehicle} style={btnPrimary as any}>+ Novo Veículo</button>
-          </div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            {vehicles.map(v => (
-              <div key={v.id} style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <span style={{ fontWeight: 600 }}>{v.model ?? '—'}</span>
-                  {v.plate && <span style={{ color: PALETTE.textSecondary, marginLeft: 8, fontSize: 13 }}>Placa: {v.plate}</span>}
-                  {v.notes && <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>{v.notes}</div>}
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '0 24px' }}>
+            {/* Lista de veículos */}
+            <div style={{ flex: 1, minWidth: 280 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ margin: 0 }}>Veículos</h3>
+                {canEdit && <button onClick={openNewVehicle} style={btnPrimary as any}>+ Novo Veículo</button>}
+              </div>
+              <div style={{ display: 'grid', gap: 6 }}>
+                {vehicles.map(v => (
+                  <div key={v.id} onClick={() => setSelectedVehicleId(v.id)} style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: selectedVehicleId === v.id ? PALETTE.hoverBg : undefined }}>
+                    <div>
+                      <span style={{ fontWeight: 600 }}>{v.model ?? '—'}</span>
+                      {v.plate && <span style={{ color: PALETTE.textSecondary, marginLeft: 8, fontSize: 13 }}>Placa: {v.plate}</span>}
+                      {v.notes && <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>{v.notes}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {canEdit ? (
+                        <>
+                          <button onClick={(e) => { e.stopPropagation(); openEditVehicle(v); setSelectedVehicleId(v.id) }} style={btnSmallBlue as any}>Editar</button>
+                          <button onClick={(e) => { e.stopPropagation(); handleDeleteVehicle(v.id); if (selectedVehicleId === v.id) setSelectedVehicleId(null) }} style={btnSmallRed as any}>Excluir</button>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+                {vehicles.length === 0 && <div style={{ color: PALETTE.textSecondary }}>Nenhum veículo cadastrado.</div>}
+              </div>
+            </div>
+
+            <div style={{ width: 1, background: PALETTE.border, alignSelf: 'stretch', margin: '0 8px' }} />
+
+            {/* Lista de despesas do veículo selecionado */}
+            <div style={{ width: 560, minWidth: 320 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ margin: 0 }}>{selectedVehicleId ? 'Despesas do Veículo' : 'Despesas (selecione um veículo)'}</h3>
+                {selectedVehicleId && (
+                  <div>
+                    {canEdit && <button onClick={() => { setEditingExpense(null); setExpenseForm({ date: '', categoryId: '', amount: '', currency: 'BRL', odometer: '', receiptUrl: '', notes: '', workerId: '' }); setShowExpenseModal(true) }} style={btnPrimary as any}>+ Nova Despesa</button>}
+                    <button onClick={() => setShowCategories(s => !s)} style={{ ...btnNav, marginLeft: 8 }}>{showCategories ? 'Ocultar Categorias' : 'Mostrar Categorias'}</button>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'grid', gap: 6 }}>
+                {!selectedVehicleId && <div style={{ color: PALETTE.textSecondary }}>Selecione um veículo à esquerda.</div>}
+                {selectedVehicleId && loadingExpenses && <div style={{ color: PALETTE.textSecondary }}>Carregando despesas...</div>}
+                {selectedVehicleId && !loadingExpenses && vehicleExpenses.length === 0 && <div style={{ color: PALETTE.textSecondary }}>Nenhuma despesa registrada.</div>}
+                {selectedVehicleId && vehicleExpenses.slice().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(e => (
+                  <div key={e.id} style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{new Date(e.date).toLocaleDateString('pt-BR')} {e.category ? `— ${e.category.name}` : ''}</div>
+                      {e.notes && <div style={{ color: PALETTE.textSecondary, marginTop: 6 }}>{truncate(e.notes, 120)}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <div style={{ fontWeight: 700 }}>{money(e.amount)}</div>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {canEdit ? (
+                            <>
+                              <button onClick={() => { setEditingExpense(e); setExpenseForm({ date: toDateInput(e.date), categoryId: e.category ? String(e.category.id) : '', amount: e.amount ?? '', currency: e.currency ?? 'BRL', odometer: e.odometer ?? '', receiptUrl: e.receiptUrl ?? '', notes: e.notes ?? '', workerId: e.workerId ?? '' }); setShowExpenseModal(true) }} style={btnSmallBlue as any}>Editar</button>
+                              <button onClick={() => handleDeleteExpense(e.id)} style={btnSmallRed as any}>Excluir</button>
+                            </>
+                          ) : null}
+                        </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {showCategories && <div style={{ width: 1, background: PALETTE.border, alignSelf: 'stretch', margin: '0 8px' }} />}
+
+            {showCategories && (
+              <div style={{ width: 420, minWidth: 260 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <h3 style={{ margin: 0 }}>Categorias de Despesa</h3>
+                  {canEdit && <button onClick={openNewCategory} style={btnPrimary as any}>+ Nova Categoria</button>}
                 </div>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button onClick={() => openEditVehicle(v)} style={btnSmallBlue as any}>Editar</button>
-                  <button onClick={() => handleDeleteVehicle(v.id)} style={btnSmallRed as any}>Excluir</button>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  {expenseCategories.map(c => (
+                    <div key={c.id} style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{c.name}</div>
+                        {c.description && <div style={{ fontSize: 12, color: PALETTE.textSecondary }}>{truncate(c.description, 80)}</div>}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {canEdit ? (
+                          <>
+                            <button onClick={() => openEditCategory(c)} style={btnSmallBlue as any}>Editar</button>
+                            <button onClick={() => handleDeleteCategory(c.id)} style={btnSmallRed as any}>Excluir</button>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                  {expenseCategories.length === 0 && <div style={{ color: PALETTE.textSecondary }}>Nenhuma categoria cadastrada.</div>}
                 </div>
               </div>
-            ))}
-            {vehicles.length === 0 && <div style={{ color: PALETTE.textSecondary }}>Nenhum veículo cadastrado.</div>}
+            )}
           </div>
         </>}
 
+        {/* Tab de tipos de serviço */}
         {tab === 'serviceTypes' && <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ display: 'flex', padding: '0 24px', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <h3 style={{ margin: 0 }}>Tipos</h3>
-            <button onClick={openNewServiceType} style={btnPrimary as any}>+ Novo Tipo</button>
+            {canEdit && <button onClick={openNewServiceType} style={btnPrimary as any}>+ Novo Tipo</button>}
           </div>
-          <div style={{ display: 'grid', gap: 6 }}>
+          <div style={{ display: 'grid', padding: '0 24px', gap: 6 }}>
             {serviceTypes.map(s => (
               <div key={s.id} style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
@@ -616,8 +1248,12 @@ export default function Trips() {
                   {s.code && <span style={{ color: PALETTE.textSecondary, marginLeft: 6, fontSize: 13 }}>— {s.code}</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
-                  <button onClick={() => openEditServiceType(s)} style={btnSmallBlue as any}>Editar</button>
-                  <button onClick={() => handleDeleteServiceType(s.id)} style={btnSmallRed as any}>Excluir</button>
+                  {canEdit ? (
+                    <>
+                      <button onClick={() => openEditServiceType(s)} style={btnSmallBlue as any}>Editar</button>
+                      <button onClick={() => handleDeleteServiceType(s.id)} style={btnSmallRed as any}>Excluir</button>
+                    </>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -637,7 +1273,20 @@ export default function Trips() {
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8 }}>
                     <div>
                       <label style={labelStyle}>Data *</label>
-                      <input required type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={inputStyle} />
+                      <input
+                        required
+                        type="date"
+                        value={form.date}
+                        onChange={e => {
+                          const newDate = e.target.value
+                          setForm(f => {
+                            const prevDate = f.date
+                            const shouldSyncEnd = !f.endDate || f.endDate === prevDate
+                            return { ...f, date: newDate, endDate: shouldSyncEnd ? newDate : f.endDate }
+                          })
+                        }}
+                        style={inputStyle}
+                      />
                     </div>
                     <div>
                       <label style={labelStyle}>Tipo *</label>
@@ -701,107 +1350,109 @@ export default function Trips() {
                 </div>
               </div>
 
-              <div style={{ marginTop: 12, borderTop: `1px solid ${PALETTE.border}`, paddingTop: 10 }}>
-                <label style={{ ...labelStyle, marginBottom: 8 }}>Despesas & Quilometragem</label>
+              {editingTrip?.completed ? (
+                <div style={{ marginTop: 12, borderTop: `1px solid ${PALETTE.border}`, paddingTop: 10 }}>
+                  <label style={{ ...labelStyle, marginBottom: 8 }}>Despesas & Quilometragem</label>
 
-                <div style={{ display: 'grid', gap: 12 }}>
-                  {/* Grupo: Despesas */}
-                  <div>
-                    <div style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-                        <div>
-                          <label style={{ ...labelStyle, fontSize: 11 }}>Preço (R$)</label>
-                          <div style={moneyWrapper}>
-                            <span style={moneyPrefix}>R$</span>
-                            <input type="number" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} style={{ ...inputStyle, paddingLeft: 34 }} />
-                          </div>
-                        </div>
-                        <div>
-                          <label style={{ ...labelStyle, fontSize: 11 }}>Alimentação (R$)</label>
-                          <div style={moneyWrapper}>
-                            <span style={moneyPrefix}>R$</span>
-                            <input type="number" step="0.01" value={form.mealExpense} onChange={e => { setForm({ ...form, mealExpense: e.target.value }); setMealEdited(true); }} style={{ ...inputStyle, paddingLeft: 34 }} />
-                          </div>
-                        </div>
-                        <div>
-                          <label style={{ ...labelStyle, fontSize: 11 }}>Combustível (R$)</label>
-                          <div style={moneyWrapper}>
-                            <span style={moneyPrefix}>R$</span>
-                            <input type="number" step="0.01" value={form.fuelExpense} onChange={e => setForm({ ...form, fuelExpense: e.target.value })} style={{ ...inputStyle, paddingLeft: 34 }} />
-                          </div>
-                        </div>
-                        <div>
-                          <label style={{ ...labelStyle, fontSize: 11 }}>Extra (R$)</label>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <div style={{ flex: 1, position: 'relative' }}>
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    {/* Grupo: Despesas */}
+                    <div>
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+                          <div>
+                            <label style={{ ...labelStyle, fontSize: 11 }}>Preço (R$)</label>
+                            <div style={moneyWrapper}>
                               <span style={moneyPrefix}>R$</span>
-                              <input type="number" step="0.01" value={form.extraExpense} onChange={e => setForm({ ...form, extraExpense: e.target.value })} style={{ ...inputStyle, paddingLeft: 34 }} />
+                              <input type="number" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} style={{ ...inputStyle, paddingLeft: 34 }} />
                             </div>
-                            {Number(form.extraExpense) > 0 && (
-                              <button type="button" onClick={(e) => { e.stopPropagation(); setShowExtraNoteModal(true) }} style={{ ...(btnSmallBlue as any), padding: '6px 8px', fontSize: 12 }}>📝</button>
-                            )}
+                          </div>
+                          <div>
+                            <label style={{ ...labelStyle, fontSize: 11 }}>Alimentação (R$)</label>
+                            <div style={moneyWrapper}>
+                              <span style={moneyPrefix}>R$</span>
+                              <input type="number" step="0.01" value={form.mealExpense} onChange={e => { setForm({ ...form, mealExpense: e.target.value }); setMealEdited(true); }} style={{ ...inputStyle, paddingLeft: 34 }} />
+                            </div>
+                          </div>
+                          <div>
+                            <label style={{ ...labelStyle, fontSize: 11 }}>Combustível (R$)</label>
+                            <div style={moneyWrapper}>
+                              <span style={moneyPrefix}>R$</span>
+                              <input type="number" step="0.01" value={form.fuelExpense} onChange={e => setForm({ ...form, fuelExpense: e.target.value })} style={{ ...inputStyle, paddingLeft: 34 }} />
+                            </div>
+                          </div>
+                          <div>
+                            <label style={{ ...labelStyle, fontSize: 11 }}>Extra (R$)</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <div style={{ flex: 1, position: 'relative' }}>
+                                <span style={moneyPrefix}>R$</span>
+                                <input type="number" step="0.01" value={form.extraExpense} onChange={e => setForm({ ...form, extraExpense: e.target.value })} style={{ ...inputStyle, paddingLeft: 34 }} />
+                              </div>
+                              {Number(form.extraExpense) > 0 && (
+                                <button type="button" onClick={(e) => { e.stopPropagation(); setShowExtraNoteModal(true) }} style={{ ...(btnSmallBlue as any), padding: '6px 8px', fontSize: 12 }}>📝</button>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <label style={{ ...labelStyle, fontSize: 11 }}>Km Rodados</label>
+                            <input type="number" step="0.01" value={form.kmDriven} onChange={e => setForm({ ...form, kmDriven: e.target.value })} style={inputStyle} />
                           </div>
                         </div>
-                        <div>
-                          <label style={{ ...labelStyle, fontSize: 11 }}>Km Rodados</label>
-                          <input type="number" step="0.01" value={form.kmDriven} onChange={e => setForm({ ...form, kmDriven: e.target.value })} style={inputStyle} />
-                        </div>
-                      </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                        <div>
-                          <label style={{ ...labelStyle, fontSize: 11 }}>Consumo Médio (km/l)</label>
-                          <input type="number" step="0.01" value={form.avgConsumption} onChange={e => setForm({ ...form, avgConsumption: e.target.value })} style={inputStyle} />
-                        </div>
-                        <div>
-                          <label style={{ ...labelStyle, fontSize: 11 }}>Autonomia Restante</label>
-                          <div style={moneyWrapper}>
-                            <span style={moneyPrefix}>R$</span>
-                            <input type="number" step="0.01" value={form.remainingAutonomy} onChange={e => setForm({ ...form, remainingAutonomy: e.target.value })} style={{ ...inputStyle, paddingLeft: 34 }} />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                          <div>
+                            <label style={{ ...labelStyle, fontSize: 11 }}>Consumo Médio (km/l)</label>
+                            <input type="number" step="0.01" value={form.avgConsumption} onChange={e => setForm({ ...form, avgConsumption: e.target.value })} style={inputStyle} />
+                          </div>
+                          <div>
+                            <label style={{ ...labelStyle, fontSize: 11 }}>Autonomia Restante</label>
+                            <div style={moneyWrapper}>
+                              <span style={moneyPrefix}>R$</span>
+                              <input type="number" step="0.01" value={form.remainingAutonomy} onChange={e => setForm({ ...form, remainingAutonomy: e.target.value })} style={{ ...inputStyle, paddingLeft: 34 }} />
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <label style={{ ...labelStyle, marginBottom: 0 }}>Cálculos</label>
-                    <div style={{ color: PALETTE.textSecondary, fontSize: 12 }}>calculado automaticamente (desbloqueie para editar)</div>
+                  <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                      <label style={{ ...labelStyle, marginBottom: 0 }}>Cálculos</label>
+                      <div style={{ color: PALETTE.textSecondary, fontSize: 12 }}>calculado automaticamente (desbloqueie para editar)</div>
+                    </div>
+                    <div>
+                      <button type="button" onClick={() => { setCostEdited(c => !c); if (costEdited) setCalcDirty(false); }} style={btnSmallBlue as any}>{costEdited ? 'Bloquear edição' : 'Editar cálculos'}</button>
+                      {calcDirty && (
+                        <button type="button" onClick={handleRecalculate} style={{ ...(btnSmallBlue as any), marginLeft: 8 }}>Recalcular</button>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <button type="button" onClick={() => { setCostEdited(c => !c); if (costEdited) setCalcDirty(false); }} style={btnSmallBlue as any}>{costEdited ? 'Bloquear edição' : 'Editar cálculos'}</button>
-                    {calcDirty && (
-                      <button type="button" onClick={handleRecalculate} style={{ ...(btnSmallBlue as any), marginLeft: 8 }}>Recalcular</button>
-                    )}
-                  </div>
-                </div>
 
-                <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-                  <div>
-                    <label style={{ ...labelStyle, fontSize: 11 }}>Custo/km (R$)</label>
-                    <div style={moneyWrapper}>
-                      <span style={moneyPrefix}>R$</span>
-                      <input disabled={!costEdited} type="number" step="0.01" value={form.costPerKm} onChange={e => { setForm({ ...form, costPerKm: e.target.value }); setCostEdited(true); setCalcDirty(true); }} style={{ ...inputStyle, paddingLeft: 34 }} />
+                  <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                    <div>
+                      <label style={{ ...labelStyle, fontSize: 11 }}>Custo/km (R$)</label>
+                      <div style={moneyWrapper}>
+                        <span style={moneyPrefix}>R$</span>
+                        <input disabled={!costEdited} type="number" step="0.01" value={form.costPerKm} onChange={e => { setForm({ ...form, costPerKm: e.target.value }); setCostEdited(true); setCalcDirty(true); }} style={{ ...inputStyle, paddingLeft: 34 }} />
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <label style={{ ...labelStyle, fontSize: 11 }}>Lucro/km (R$)</label>
-                    <div style={moneyWrapper}>
-                      <span style={moneyPrefix}>R$</span>
-                      <input disabled={!costEdited} type="number" step="0.01" value={form.profitPerKm} onChange={e => { setForm({ ...form, profitPerKm: e.target.value }); setCostEdited(true); setCalcDirty(true); }} style={{ ...inputStyle, paddingLeft: 34 }} />
+                    <div>
+                      <label style={{ ...labelStyle, fontSize: 11 }}>Lucro/km (R$)</label>
+                      <div style={moneyWrapper}>
+                        <span style={moneyPrefix}>R$</span>
+                        <input disabled={!costEdited} type="number" step="0.01" value={form.profitPerKm} onChange={e => { setForm({ ...form, profitPerKm: e.target.value }); setCostEdited(true); setCalcDirty(true); }} style={{ ...inputStyle, paddingLeft: 34 }} />
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <label style={{ ...labelStyle, fontSize: 11 }}>Total (R$)</label>
-                    <div style={moneyWrapper}>
-                      <span style={moneyPrefix}>R$</span>
-                      <input disabled={!costEdited} type="number" step="0.01" value={form.total} onChange={e => { setForm({ ...form, total: e.target.value }); setCostEdited(true); setCalcDirty(true); }} style={{ ...inputStyle, paddingLeft: 34 }} />
+                    <div>
+                      <label style={{ ...labelStyle, fontSize: 11 }}>Total (R$)</label>
+                      <div style={moneyWrapper}>
+                        <span style={moneyPrefix}>R$</span>
+                        <input disabled={!costEdited} type="number" step="0.01" value={form.total} onChange={e => { setForm({ ...form, total: e.target.value }); setCostEdited(true); setCalcDirty(true); }} style={{ ...inputStyle, paddingLeft: 34 }} />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              ) : null}
 
               <div style={{ marginTop: 12 }}>
                 <label style={labelStyle}>Observações</label>
@@ -809,27 +1460,21 @@ export default function Trips() {
               </div>
 
               {editingTrip && (
-                <div style={{ marginTop: 12 }}>
-                  <label style={labelStyle}>Data de Conclusão</label>
-                  <input type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} style={inputStyle} />
-                </div>
-              )}
-
-              {editingTrip && (
                 <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    {!editingTrip.completed ? (
-                      <button type="button" onClick={async () => {
+                    <button type="button" onClick={async () => {
+                      if (!editingTrip) return
+                      if (!editingTrip.completed) {
                         await handleMarkComplete(editingTrip)
-                        const nowIso = new Date().toISOString()
-                        setEditingTrip(et => et ? { ...et, completed: true, endDate: nowIso } : et)
-                        setForm(f => ({ ...f, endDate: toDateInput(nowIso) }))
-                      }} style={{ ...(btnSmallBlue as any), padding: '8px 12px', fontSize: 14 }}>Marcar como completa</button>
-                    ) : (
-                      <button type="button" style={{ ...(btnSmallBlue as any), padding: '8px 12px', fontSize: 14, background: '#2ecc71', color: '#fff', cursor: 'default' }} disabled>
-                        {editingTrip.endDate ? `Concluída ${new Date(editingTrip.endDate).toLocaleDateString('pt-BR')}` : 'Concluída'}
-                      </button>
-                    )}
+                        setEditingTrip(et => et ? { ...et, completed: true, endDate: new Date().toISOString() } : et)
+                      } else {
+                        await handleMarkIncomplete(editingTrip)
+                        setEditingTrip(et => et ? { ...et, completed: false, endDate: null } : et)
+                      }
+                    }}
+                      style={editingTrip.completed ? { ...(btnSmallBlue as any), padding: '8px 12px', fontSize: 14, background: '#2ecc71', color: '#fff' } : { ...(btnSmallBlue as any), padding: '8px 12px', fontSize: 14 }}>
+                      {!editingTrip.completed ? 'Marcar como completa' : (editingTrip.endDate ? `Concluída ${new Date(editingTrip.endDate).toLocaleDateString('pt-BR')} (desmarcar)` : 'Concluída (desmarcar)')}
+                    </button>
                     <button type="button" onClick={() => { setConfirmDelete(editingTrip); setShowTripModal(false) }} style={{ ...(btnSmallRed as any), padding: '8px 12px', fontSize: 14 }}>Excluir viagem</button>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -844,6 +1489,30 @@ export default function Trips() {
                   <button type="submit" style={btnPrimary as any}>{editingTrip ? 'Salvar' : 'Criar'}</button>
                 </div>
               )}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showCategoryModal && (
+        <div style={overlay} onClick={() => setShowCategoryModal(false)}>
+          <div style={smallModal} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>{editingCategory ? 'Editar Categoria' : 'Nova Categoria'}</h3>
+            <form onSubmit={handleSaveCategory}>
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div>
+                  <label style={labelStyle}>Nome *</label>
+                  <input required value={categoryForm.name} onChange={e => setCategoryForm({ ...categoryForm, name: e.target.value })} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Descrição</label>
+                  <input value={categoryForm.description} onChange={e => setCategoryForm({ ...categoryForm, description: e.target.value })} style={inputStyle} />
+                </div>
+              </div>
+              <div style={{ marginTop: 14, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setShowCategoryModal(false)} style={btnCancel as any}>Cancelar</button>
+                <button type="submit" style={btnPrimary as any}>{editingCategory ? 'Salvar' : 'Criar'}</button>
+              </div>
             </form>
           </div>
         </div>
@@ -883,6 +1552,55 @@ export default function Trips() {
           </div>
         </div>
       )}
+
+            {showExpenseModal && (
+              <div style={overlay} onClick={() => setShowExpenseModal(false)}>
+                <div style={smallModal} onClick={e => e.stopPropagation()}>
+                  <h3 style={{ marginTop: 0 }}>{editingExpense ? 'Editar Despesa' : 'Nova Despesa'}</h3>
+                  <form onSubmit={handleSaveExpense}>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <div>
+                        <label style={labelStyle}>Data *</label>
+                        <input required type="date" value={expenseForm.date} onChange={e => setExpenseForm({ ...expenseForm, date: e.target.value })} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Categoria</label>
+                        <select value={expenseForm.categoryId} onChange={e => setExpenseForm({ ...expenseForm, categoryId: e.target.value })} style={selectStyle}>
+                          <option value="">Selecione</option>
+                          {expenseCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Valor (R$)</label>
+                        <div style={moneyWrapper}>
+                          <span style={moneyPrefix}>R$</span>
+                          <input type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm({ ...expenseForm, amount: e.target.value })} style={{ ...inputStyle, paddingLeft: 34 }} />
+                        </div>
+                      </div>
+                      {/* Fornecedor removed */}
+                      <div>
+                        <label style={labelStyle}>Trabalhador responsável</label>
+                        <select required value={expenseForm.workerId} onChange={e => setExpenseForm({ ...expenseForm, workerId: e.target.value })} style={selectStyle}>
+                          <option value="">Selecione</option>
+                          {workers.map(w => (
+                            <option key={w.id} value={w.id}>{w.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {/* tags removed */}
+                      <div>
+                        <label style={labelStyle}>Notas</label>
+                        <textarea value={expenseForm.notes} onChange={e => setExpenseForm({ ...expenseForm, notes: e.target.value })} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 14, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                      <button type="button" onClick={() => setShowExpenseModal(false)} style={btnCancel as any}>Cancelar</button>
+                      <button type="submit" style={btnPrimary as any}>{editingExpense ? 'Salvar' : 'Criar'}</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
 
       {showCityModal && (
         <div style={overlay} onClick={() => setShowCityModal(false)}>
